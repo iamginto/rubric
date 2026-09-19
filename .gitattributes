@@ -1,4 +1,4 @@
-# Metin dosyalari depoda LF durur; .cmd Windows'ta CRLF ile acilir.
+# Metin dosyaları depoda LF durur; .cmd Windows'ta CRLF ile açılır.
 * text=auto
 *.cmd text eol=crlf
 *.ico binary

@@ -1,12 +1,12 @@
 # rubric
 
-Zathura tadinda, vim tuslu bir belge okuyucu. Windows icin; arayuz tkinter,
-sayfa isleme PyMuPDF (MuPDF).
+Zathura tadında, vim tuşlu bir belge okuyucu. Windows için; arayüz tkinter,
+sayfa işleme PyMuPDF (MuPDF).
 
-Adini ortacag el yazmalarinda basliklarin yazildigi kirmizi murekkepten
-(Latince *rubrica*) aliyor; varsayilan temasi da kirmizi fosfor.
+Adını ortaçağ el yazmalarında başlıkların yazıldığı kırmızı mürekkepten
+(Latince *rubrica*) alıyor; varsayılan teması da kırmızı fosfor.
 
-PDF'in yani sira MuPDF'in actigi her sey: EPUB, XPS, CBZ, MOBI, FB2.
+PDF'in yanı sıra MuPDF'in açtığı her şey: EPUB, XPS, CBZ, MOBI, FB2.
 
 ## Kurulum
 
@@ -18,142 +18,142 @@ uv sync
 uv run rubric.py <dosya.pdf>
 ```
 
-`uv run kisayol.py` masaustune ikonuyla bir **rubric** kisayolu kurar: cift tikla
-acilir, konsol acmaz, uzerine PDF surukleyebilirsin. `.pdf` uzantisini bir
-programa baglamak istersen `rubric.cmd` onun icin var.
+`uv run kisayol.py` masaüstüne ikonuyla bir **rubric** kısayolu kurar: çift tıkla
+açılır, konsol açmaz, üzerine PDF sürükleyebilirsin. `.pdf` uzantısını bir
+programa bağlamak istersen `rubric.cmd` onun için var.
 
-Windows'un beyaz baslik cubugu yerine temaya uygun bir ust bar var:
-`$ rubric <dosya>` ve `[-] [+] [x]`. Bardan (ya da alttaki durum cubugundan)
-surukleyince pencere tasinir, cift tik buyutur, barin ust kenari boyutlandirir.
-Bari `Ctrl-K` > `baslik-cubugu` ile ac / kapa; secim rubricrc'ye kalici yazilir.
-Windows'un kendi basligini geri istersen `set windows-basligi true`.
+Windows'un beyaz başlık çubuğu yerine temaya uygun bir üst bar var:
+`$ rubric <dosya>` ve `[-] [+] [x]`. Bardan (ya da alttaki durum çubuğundan)
+sürükleyince pencere taşınır, çift tık büyütür, barın üst kenarı boyutlandırır.
+Barı `Ctrl-K` > `baslik-cubugu` ile aç / kapa; seçim rubricrc'ye kalıcı yazılır.
+Windows'un kendi başlığını geri istersen `set windows-basligi true`.
 
-Konsolsuz bir exe de uretilebilir (Python kurulumu gerektirmez, uzerine PDF
-surukleyebilirsin):
+Konsolsuz bir exe de üretilebilir (Python kurulumu gerektirmez, üzerine PDF
+sürükleyebilirsin):
 
 ```powershell
 uv run --with pyinstaller exe-yap.py      # -> dist\rubric\rubric.exe
 ```
 
-Exe yanindaki `_internal` klasoruyle birlikte calisir; baskasina vermek icin
-`dist\rubric` klasorunu zip'le. Acilis ~0.3 sn; yalnizca yeni derlenmis exe'nin
-ilk acilisi Defender taramasi yuzunden birkac saniye surer.
+Exe yanındaki `_internal` klasörüyle birlikte çalışır; başkasına vermek için
+`dist\rubric` klasörünü zip'le. Açılış ~0.3 sn; yalnızca yeni derlenmiş exe'nin
+ilk açılışı Defender taraması yüzünden birkaç saniye sürer.
 
-`uv run tus-karti.py` tus haritasinin PDF kartini masaustune
-(`rubric-tuslari.pdf`) uretir. Kart tuslari `rubric.py`'deki haritadan okur, elle
-yazilmaz - yani tus degisince kart da degisir.
+`uv run tus-karti.py` tuş haritasının PDF kartını masaüstüne
+(`rubric-tuslari.pdf`) üretir. Kart, tuşları `rubric.py`'deki haritadan okur;
+elle yazılmaz, yani tuş değişince kart da değişir.
 
-## Tuslar
+## Tuşlar
 
 | | |
 |---|---|
-| `j` `k` `h` `l` | kaydir (oklar da olur) |
-| `<C-d>` `<C-u>` | yarim ekran |
+| `j` `k` `h` `l` | kaydır (oklar da olur) |
+| `<C-d>` `<C-u>` | yarım ekran |
 | `<Space>` `<C-f>` / `<C-b>` | tam ekran ileri / geri |
-| `J` `K` | sonraki / onceki sayfa |
+| `J` `K` | sonraki / önceki sayfa |
 | `gg` `G` | ilk / son sayfa - `42G` ya da `42` Enter 42. sayfaya |
-| `5j` | sayi oneki her komutta gecerli |
-| `s` `a` | genislige / sayfaya sigdir |
-| `+` `-` | yakinlastir - `<C-0>` %100 |
-| `r` | 90 derece dondur |
-| `<C-r>` | gece modu (renkleri ters cevir) |
-| `d` | cift sayfa |
-| `<Tab>` | icindekiler (`j/k/Enter/Esc`) |
-| `<C-k>` | eylem paleti: komutlar, tuslari ve tus atama |
-| `/` `?` | ileri / geri ara, `n` `N` gez, `<Esc>` eslemeleri kapat |
-| `Shift`+surukle | metni vurgula; `v` kalemi acarsa duz surukleme de vurgular |
-| sag tik | vurguyu sil - `u` son vurgu islemini geri alir |
+| `5j` | sayı öneki her komutta geçerli |
+| `s` `a` | genişliğe / sayfaya sığdır |
+| `+` `-` | yakınlaştır - `<C-0>` %100 |
+| `r` | 90 derece döndür |
+| `<C-r>` | gece modu (renkleri ters çevir) |
+| `d` | çift sayfa |
+| `<Tab>` | içindekiler (`j/k/Enter/Esc`) |
+| `<C-k>` | eylem paleti: komutlar, tuşları ve tuş atama |
+| `/` `?` | ileri / geri ara, `n` `N` gez, `<Esc>` eşleşmeleri kapat |
+| `Shift`+sürükle | metni vurgula; `v` kalemi açarsa düz sürükleme de vurgular |
+| sağ tık | vurguyu sil - `u` son vurgu işlemini geri alır |
 | `V` | vurgu listesi (`j/k`, `Enter` git, `x` sil) |
-| `:vurgulari-aktar` | `<ad>-vurgulu.pdf` kopyasi; asil PDF'e hic dokunulmaz |
-| `m<harf>` `'<harf>` | isaret koy / isarete git |
-| `<C-o>` `<C-i>` | ziplama gecmisinde geri / ileri |
+| `:vurgulari-aktar` | `<ad>-vurgulu.pdf` kopyası; asıl PDF'e hiç dokunulmaz |
+| `m<harf>` `'<harf>` | işaret koy / işarete git |
+| `<C-o>` `<C-i>` | zıplama geçmişinde geri / ileri |
 | `<F11>` `<F5>` | tam ekran / sunum |
-| `<C-m>` | durum cubugunu gizle |
-| `o` | dosya ac, `R` yeniden yukle |
-| `q` | bakilan belgeyi kapat (`Ctrl+W` de); sonuncusu kapaninca bos ekran |
-| `<C-e>` | kapatilan belgeyi geri ac (Ctrl+E): kaldigi sayfa, zoom ve listedeki yeriyle; son 3 (1-10 ayarlanir) |
-| `Q` | uygulamadan cik (Shift+q) - belgeler ve konumlar kaydedilir |
-| `:` | komut satiri |
+| `<C-m>` | durum çubuğunu gizle |
+| `o` | dosya aç, `R` yeniden yükle |
+| `q` | bakılan belgeyi kapat (`Ctrl+W` de); sonuncusu kapanınca boş ekran |
+| `<C-e>` | kapatılan belgeyi geri aç (Ctrl+E): kaldığı sayfa, zoom ve listedeki yeriyle; son 3 (1-10 ayarlanır) |
+| `Q` | uygulamadan çık (Shift+q) - belgeler ve konumlar kaydedilir |
+| `:` | komut satırı |
 
-Fare: tekerlek kaydirir, `Ctrl`+tekerlek imlecin altindaki yeri sabit tutarak
-yakinlastirir, surukleme sayfayi tasir.
+Fare: tekerlek kaydırır, `Ctrl`+tekerlek imlecin altındaki yeri sabit tutarak
+yakınlaştırır, sürükleme sayfayı taşır.
 
 ## Komutlar
 
-`:open <yol>` `:quit` `:reload` `:goto <n>` `:zoom <yuzde>` `:rotate`
-`:set <anahtar> <deger>` `:map <tus> <komut>` `:unmap <tus>`
+`:open <yol>` `:quit` `:reload` `:goto <n>` `:zoom <yüzde>` `:rotate`
+`:set <anahtar> <değer>` `:map <tuş> <komut>` `:unmap <tuş>`
 `:bmark <ad>` `:blist` `:bdelete <ad>` `:nohl` `:toc` `:info`
-`:export <yol.png>` `:lang <en|tr|de>` `:rc` (yapilandirma dosyasinin yolu)
+`:export <yol.png>` `:lang <en|tr|de>` `:rc` (yapılandırma dosyasının yolu)
 `:eylemler` `:help`
 
-Kisaltmalar: `:q` `:o` `:e` `:r` `:bm` `:nohl`.
+Kısaltmalar: `:q` `:o` `:e` `:r` `:bm` `:nohl`.
 
-Ic komut adlari da dogrudan yazilabilir: `:sonraki-sayfa`.
+İç komut adları da doğrudan yazılabilir: `:sonraki-sayfa`.
 
 ## Eylem paleti (`<C-k>`)
 
-Tus degistirmek icin dosya bulup elle duzenlemek gerekmiyor. `<C-k>` butun ic
-komutlari, ne ise yaradiklarini ve o anki tuslarini tek listede acar:
+Tuş değiştirmek için dosya bulup elle düzenlemek gerekmiyor. `<C-k>` bütün iç
+komutları, ne işe yaradıklarını ve o anki tuşlarını tek listede açar:
 
 ```
 > gece
-[ yakinlastirma ve duzen ]
-  ters-renk    gece modu: renkleri ters cevir              <C-r>
+[ yakınlaştırma ve düzen ]
+  ters-renk    gece modu: renkleri ters çevir              <C-r>
 ```
 
-Yazdikca suzulur (ad, aciklama ya da tus uzerinden), `<Down>`/`<Up>` gezer,
-`Enter` komutu calistirir. Secili komutun uzerinde yine `<C-k>` sag altta
-eylemleri acar:
+Yazdıkça süzülür (ad, açıklama ya da tuş üzerinden), `<Down>`/`<Up>` gezer,
+`Enter` komutu çalıştırır. Seçili komutun üzerinde yine `<C-k>` sağ altta
+eylemleri açar:
 
 | | |
 |---|---|
-| `calistir` | komutu calistir |
-| `tus ata` | bir tus bileskesine bas, `Enter` ile onayla |
-| `tusu kaldir` | birden cok tus varsa hangisi diye sorar |
-| `varsayilana don` | komutun varsayilan tuslarini geri getirir |
+| `çalıştır` | komutu çalıştır |
+| `tuş ata` | bir tuş bileşkesine bas, `Enter` ile onayla |
+| `tuşu kaldır` | birden çok tuş varsa hangisi diye sorar |
+| `varsayılana dön` | komutun varsayılan tuşlarını geri getirir |
 
-Onay ekrani ne olacagini basmadan once soyler: tus baska bir komuttaysa kimden
-alinacagini, sayi tusu gibi calismayacak bir sey sectiysen nedenini yazar.
-`Esc` vazgecer.
+Onay ekranı ne olacağını basmadan önce söyler: tuş başka bir komuttaysa kimden
+alınacağını, sayı tuşu gibi çalışmayacak bir şey seçtiysen nedenini yazar.
+`Esc` vazgeçer.
 
-Atama **kalici**: `%APPDATA%\rubric\rubricrc` dosyasinin sonundaki isaretli bloga
-yazilir. Elle yazdigin satirlara dokunulmaz, varsayilanina donen tus blokta yer
-tutmaz. Yani palet ile dosya ayni seyi soyler, biri otekini ezmez.
+Atama **kalıcı**: `%APPDATA%\rubric\rubricrc` dosyasının sonundaki işaretli
+bloğa yazılır. Elle yazdığın satırlara dokunulmaz, varsayılanına dönen tuş
+blokta yer tutmaz. Yani palet ile dosya aynı şeyi söyler, biri ötekini ezmez.
 
 ## Belge listesi ve oturum
 
-Actigin belgeler acilis sirasiyla bir listede durur: `Ctrl+Right` sonraki
-(daha yeni), `Ctrl+Left` onceki (daha eski), uclarda basa doner. `B` listeyi
-acar (`Enter` git, `x` kapat), `q` (ya da `Ctrl+W`) bakilan belgeyi kapatir;
-uygulamadan cikmak `Q`. Yanlislikla kapattigini `Ctrl+E` geri acar
-(son 3 tane, en yenisi once; uygulamayi kapatip acsan da). Kac tane
-olacagini `Ctrl+K` > ayarlar > `geri-acma-siniri` listesinden 1-10 arasi
-secersin; secim rubricrc'ye `set kapanan-belgeler` olarak yazilir.
-Dosya penceresinde birden cok dosya secilebilir. Durum cubugunda `[2/3]`.
+Açtığın belgeler açılış sırasıyla bir listede durur: `Ctrl+Right` sonraki
+(daha yeni), `Ctrl+Left` önceki (daha eski), uçlarda başa döner. `B` listeyi
+açar (`Enter` git, `x` kapat), `q` (ya da `Ctrl+W`) bakılan belgeyi kapatır;
+uygulamadan çıkmak `Q`. Yanlışlıkla kapattığını `Ctrl+E` geri açar
+(son 3 tane, en yenisi önce; uygulamayı kapatıp açsan da). Kaç tane
+olacağını `Ctrl+K` > ayarlar > `geri-acma-siniri` listesinden 1-10 arası
+seçersin; seçim rubricrc'ye `set kapanan-belgeler` olarak yazılır.
+Dosya penceresinde birden çok dosya seçilebilir. Durum çubuğunda `[2/3]`.
 
-Uygulamayi kapatip acinca liste ve son baktigin belge, kaldigin sayfayla geri
-gelir (`set oturum false` kapatir). zathura'daki gibi bellekte yalnizca bakilan
-belge acik; digerleri yol + kaldigin yer. Liste `son-belgeler` (varsayilan 10,
-zathura'nin `show-recent`'i gibi) ile sinirli: dolunca en uzun suredir
-bakmadigin belge cikar, silinmis dosyalar acilista ayiklanir.
+Uygulamayı kapatıp açınca liste ve son baktığın belge, kaldığın sayfayla geri
+gelir (`set oturum false` kapatır). zathura'daki gibi bellekte yalnızca bakılan
+belge açık; diğerleri yol + kaldığın yer. Liste `son-belgeler` (varsayılan 10,
+zathura'nın `show-recent`'i gibi) ile sınırlı: dolunca en uzun süredir
+bakmadığın belge çıkar, silinmiş dosyalar açılışta ayıklanır.
 
 ## Temalar
 
-`Ctrl+K` > en alttaki `tema` > Enter: dil secimi gibi bir liste acilir, on tema
-her biri kendi renginde, secili olan `[x]`. `j/k` ile gez, `Enter` uygular ve
-rubricrc'ye `set tema <ad>` yazar; palet acik kalir, baska tema icin yine Enter.
-`:tema` listeyi acar, `:tema neon` dogrudan gecer
-(her dildeki ad olur: `:theme ice`). Temalar: kirmizi-fosfor (varsayilan),
-yesil-fosfor, kehribar, buz, neon, kutup-gecesi, toprak, murekkep, kagit,
-gun-isigi. rubricrc'de elle yazilan tek bir renk (`set vurgu #...`), satir
-sirasindan bagimsiz olarak her temanin ustunde kalir.
+`Ctrl+K` > en alttaki `tema` > Enter: dil seçimi gibi bir liste açılır, on tema
+her biri kendi renginde, seçili olan `[x]`. `j/k` ile gez, `Enter` uygular ve
+rubricrc'ye `set tema <ad>` yazar; palet açık kalır, başka tema için yine Enter.
+`:tema` listeyi açar, `:tema neon` doğrudan geçer (her dildeki ad olur:
+`:theme ice`). Temalar: `kirmizi-fosfor` (varsayılan), `yesil-fosfor`,
+`kehribar`, `buz`, `neon`, `kutup-gecesi`, `toprak`, `murekkep`, `kagit`,
+`gun-isigi`. rubricrc'de elle yazılan tek bir renk (`set vurgu #...`), satır
+sırasından bağımsız olarak her temanın üstünde kalır.
 
 ## Dil / Language / Sprache
 
-Arayuz Ingilizce (varsayilan), Turkce ve Almanca. Degistirmek icin `<C-k>` >
-`dil` > Enter: English / Türkçe / Deutsch listesinden secilir. `:lang` da ayni
-listeyi acar, `:lang tr` dogrudan gecer. Secim rubricrc'ye `set dil tr` olarak
-kalici yazilir. Tus karti da ayni dili konusur: `uv run tus-karti.py --dil de`.
+Arayüz İngilizce (varsayılan), Türkçe ve Almanca. Değiştirmek için `<C-k>` >
+`dil` > Enter: English / Türkçe / Deutsch listesinden seçilir. `:lang` da aynı
+listeyi açar, `:lang tr` doğrudan geçer. Seçim rubricrc'ye `set dil tr` olarak
+kalıcı yazılır. Tuş kartı da aynı dili konuşur: `uv run tus-karti.py --dil de`.
 
 The interface speaks English (default), Turkish and German: `<C-k>` >
 `language` > Enter opens a picker, `:lang` does the same, `:lang de` switches
@@ -163,84 +163,85 @@ directly. Command names are translated too (`scroll-down` / `aşağı` /
 to rubricrc so switching languages never breaks the file. Setting names
 (`set ters-renk`) are not translated.
 
-Palette aksansiz yazmak da bulur (`sigdir` -> "sığdır"). Yazitipi yoksa
+Palet aksansız yazılanı da bulur (`sigdir` -> "sığdır"). Yazı tipi yoksa
 Consolas / Cascadia Mono / DejaVu Sans Mono / Courier New'den ilk bulunana
-dusulur; hepsi Turkce ve Almanca harflerin tamamini tasir.
+düşülür; hepsi Türkçe ve Almanca harflerin tamamını taşır.
 
-## Yapilandirma
+## Yapılandırma
 
-`rubricrc.ornek` dosyasini `%APPDATA%\rubric\rubricrc` yoluna kopyala. Icinde her
-ayarin ne ise yaradigi ve baglanabilecek butun ic komutlarin listesi var.
-Calisirken denemek icin `:set`, kalici yapmak icin dosyaya yaz.
+`rubricrc.ornek` dosyasını `%APPDATA%\rubric\rubricrc` yoluna kopyala. İçinde her
+ayarın ne işe yaradığı ve bağlanabilecek bütün iç komutların listesi var.
+Çalışırken denemek için `:set`, kalıcı yapmak için dosyaya yaz.
 
-Durum cubugunun metni de ayar:
+Durum çubuğunun metni de ayar:
 
 ```
 set durum-bicimi  $ {ad} :: {sayfa}/{toplam} [{yuzde}%] z{zoom}%{ters}{arama}
 ```
 
-Bozuk bir satir yalnizca kendini dusurur; uygulama acilir, hata durum
-cubugunda gorunur.
+Bozuk bir satır yalnızca kendini düşürür; uygulama açılır, hata durum
+çubuğunda görünür.
 
-## Nasil calisiyor
+## Nasıl çalışıyor
 
-- **Render**: PyMuPDF sayfayi PPM'e verir, tkinter `PhotoImage` onu dogrudan
+- **Render**: PyMuPDF sayfayı PPM'e verir, tkinter `PhotoImage` onu doğrudan
   okur - Pillow'a gerek yok.
-- **Kaydirma**: butun sayfalar tek bir uzun tuvale dizilir, ama yalnizca
-  goruntuye girenler islenir; cikanlar tuvalden dusurulur. 1612 sayfalik bir
-  kitap 0.6 sn'de aciliyor, bellekte hep 12 sayfa duruyor.
-- **Konum**: mutlak piksel yerine (sayfa, sayfa icindeki oran) ikilisi
-  saklanir. Bu yuzden yakinlastirinca, pencereyi boyutlandirinca ya da cift
-  sayfaya gecince bakilan yer kaymaz; isaretler ve "kaldigi yerden ac" da
-  ayni ikiliyi kullanir.
-- **Yakinlastirma**: tekerlek / tus olayi yalnizca hedef zoom'u gunceller;
-  kuyrukta olay kalmayinca birikenler tek cizimde uygulanir ve once yalnizca
-  gorunen sayfalar islenir. Hizli cevrilen tekerlek boylece geride kalmaz
-  (1612 sayfada 6 tik: 1.2 sn -> 70 ms).
-- **Arama** imlecin oldugu sayfadan baslar, basa sarar ve 6 sayfalik partiler
-  halinde arka planda yurur. Ilk esleme ~170 ms'de bulunur, geri kalani
-  dolarken arayuz calisir. (Tek seferde taramak 1612 sayfada 20 sn donduruyordu.)
+- **Kaydırma**: bütün sayfalar tek bir uzun tuvale dizilir, ama yalnızca
+  görüntüye girenler işlenir; çıkanlar tuvalden düşürülür. 1612 sayfalık bir
+  kitap 0.6 sn'de açılıyor, bellekte hep 12 sayfa duruyor.
+- **Konum**: mutlak piksel yerine (sayfa, sayfa içindeki oran) ikilisi
+  saklanır. Bu yüzden yakınlaştırınca, pencereyi boyutlandırınca ya da çift
+  sayfaya geçince bakılan yer kaymaz; işaretler ve "kaldığı yerden aç" da
+  aynı ikiliyi kullanır.
+- **Yakınlaştırma**: tekerlek / tuş olayı yalnızca hedef zoom'u günceller;
+  kuyrukta olay kalmayınca birikenler tek çizimde uygulanır ve önce yalnızca
+  görünen sayfalar işlenir. Hızlı çevrilen tekerlek böylece geride kalmaz
+  (1612 sayfada 6 tık: 1.2 sn -> 70 ms).
+- **Arama** imlecin olduğu sayfadan başlar, başa sarar ve 6 sayfalık partiler
+  hâlinde arka planda yürür. İlk eşleşme ~170 ms'de bulunur, geri kalanı
+  dolarken arayüz çalışır. (Tek seferde taramak 1612 sayfada 20 sn donduruyordu.)
 
 ## Veriler nerede
 
 | | |
 |---|---|
-| `%APPDATA%\rubric\rubricrc` | yapilandirma (elle ya da eylem paletinden) |
-| `%LOCALAPPDATA%\rubric\durum.json` | dosya basina son okunan yer, isaretler, yer imleri ve vurgular |
+| `%APPDATA%\rubric\rubricrc` | yapılandırma (elle ya da eylem paletinden) |
+| `%LOCALAPPDATA%\rubric\durum.json` | dosya başına son okunan yer, işaretler, yer imleri ve vurgular |
 
-`durum.json` acilan belgelerin tam yolunu ve vurgulanan metni de tutar; okuma
-gecmisini silmek icin bu dosyayi sil. rubric internete hic baglanmaz, belgedeki
-baglantilari ve gomulu betikleri calistirmaz. Vurgular asil PDF'e yazilmaz;
-yalnizca `:vurgulari-aktar` ayri bir kopya uretir.
+`durum.json` açılan belgelerin tam yolunu ve vurgulanan metni de tutar; okuma
+geçmişini silmek için bu dosyayı sil. rubric internete hiç bağlanmaz, belgedeki
+bağlantıları ve gömülü betikleri çalıştırmaz. Vurgular asıl PDF'e yazılmaz;
+yalnızca `:vurgulari-aktar` ayrı bir kopya üretir.
 
 ## Testler
 
-`testler\` altindaki betikler arayuzu `mainloop` cagirmadan kurar ve komutlari
-dogrudan surer. Gecici bir veri / ayar dizini ve kendi urettikleri bir deneme
-PDF'i kullanirlar; gercek `rubricrc` ve `durum.json`'a dokunmazlar.
+`testler\` altındaki betikler arayüzü `mainloop` çağırmadan kurar ve komutları
+doğrudan sürer. Geçici bir veri / ayar dizini ve kendi ürettikleri bir deneme
+PDF'i kullanırlar; gerçek `rubricrc` ve `durum.json`'a dokunmazlar.
 
 ```powershell
-uv run testler\duman.py      # butun komutlari sirayla surer, hata sayar
-uv run testler\palet.py      # eylem paleti: gezinme, tus atama, rubricrc
-uv run testler\vurgu.py      # metin vurgulari, kalicilik, aktarma
-uv run testler\rc.py         # rubricrc okuyucusu ve rubricrc.ornek
-uv run testler\sayfa_git.py  # 42 Enter
-uv run testler\zoom.py       # yakinlastirma: olay birlestirme, imlec capasi, sure
-uv run testler\icindekiler.py  # panel: dogru basliktan acilma, oklar, hatirlama
-uv run testler\cerceve.py    # pencere cercevesi ve ust bar (ekrandan okur)
-uv run testler\stres.py      # 1612 sayfada acilis / kaydirma olcumu
-uv run testler\arama.py      # parcali aramanin arayuzu dondurmedigini olcer
+uv run testler\duman.py        # bütün komutları sırayla sürer, hata sayar
+uv run testler\palet.py        # eylem paleti: gezinme, tuş atama, rubricrc
+uv run testler\belgeler.py     # belge listesi, oturum, kapananı geri açma
+uv run testler\vurgu.py        # metin vurguları, kalıcılık, aktarma
+uv run testler\rc.py           # rubricrc okuyucusu ve rubricrc.ornek
+uv run testler\sayfa_git.py    # 42 Enter
+uv run testler\zoom.py         # yakınlaştırma: olay birleştirme, imleç çapası, süre
+uv run testler\icindekiler.py  # panel: doğru başlıktan açılma, oklar, hatırlama
+uv run testler\cerceve.py      # pencere çerçevesi ve üst bar (ekrandan okur)
+uv run testler\stres.py        # 1612 sayfada açılış / kaydırma ölçümü
+uv run testler\arama.py        # parçalı aramanın arayüzü dondurmadığını ölçer
 ```
 
-Gercek bir kitapta olcmek icin `$env:RUBRIC_TEST_PDF = "<yol.pdf>"`.
+Gerçek bir kitapta ölçmek için `$env:RUBRIC_TEST_PDF = "<yol.pdf>"`.
 
-`testler\fare.py` ayridir: isletim sistemine gercek fare ve klavye girdisi
-verir, ~30 sn boyunca imleci ve klavyeyi ele gecirir. Calisirken bilgisayara
+`testler\fare.py` ayrıdır: işletim sistemine gerçek fare ve klavye girdisi
+verir, ~30 sn boyunca imleci ve klavyeyi ele geçirir. Çalışırken bilgisayara
 dokunma.
 
 ## Lisans
 
-[GNU AGPL-3.0](LICENSE) ya da sonraki bir surumu. rubric, yine AGPL-3.0
-lisansli [PyMuPDF](https://github.com/pymupdf/PyMuPDF) uzerine kurulu.
-Degistirilmis bir surumunu (exe dahil) dagitan, kaynak kodunu da ayni
+[GNU AGPL-3.0](LICENSE) ya da sonraki bir sürümü. rubric, yine AGPL-3.0
+lisanslı [PyMuPDF](https://github.com/pymupdf/PyMuPDF) üzerine kurulu.
+Değiştirilmiş bir sürümünü (exe dahil) dağıtan, kaynak kodunu da aynı
 lisansla vermek zorunda.
