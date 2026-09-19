@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# uv'nin sanal ortami; `uv sync` ile geri gelir
+.venv/
+
+# exe-yap.py ciktisi. Exe depoya degil, GitHub Releases'a konur.
+build/
+dist/
+*.spec

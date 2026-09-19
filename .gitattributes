@@ -1,0 +1,4 @@
+# Metin dosyalari depoda LF durur; .cmd Windows'ta CRLF ile acilir.
+* text=auto
+*.cmd text eol=crlf
+*.ico binary

@@ -1,0 +1,151 @@
+# rubric yapilandirmasi
+#
+# Bu dosyayi su yola kopyala:
+#     %APPDATA%\rubric\rubricrc
+# Uygulama icinden yolunu ogrenmek icin:  :rc
+# Bir ayari calisirken denemek icin:      :set sayfa-arasi 24
+#
+# Sozdizimi zathurarc'a benzer:  set <anahtar> <deger> / map <tus> <komut>
+# Satir bozuksa yalnizca o satir atlanir, uygulama acilir; hatalar durum
+# cubugunda gorunur.
+
+
+# ---------------------------------------------------------------------------
+# Tema ve renkler
+#
+# Tema butun renkleri birden verir. Uygulamada Ctrl-K > temalar'dan secince
+# buraya kendisi yazar; elle de olur:
+#   kirmizi-fosfor yesil-fosfor kehribar buz neon kutup-gecesi toprak
+#   murekkep kagit gun-isigi
+#
+# Asagidaki renkler kirmizi-fosfor'un degerleri, bu yuzden yorumda. Tek bir
+# rengi degistirmek istersen satirin basindaki '# 'i sil: elle verilen renk,
+# hangi tema secilirse secilsin (satir sirasi fark etmeksizin) temanin
+# ustunde kalir.
+# ---------------------------------------------------------------------------
+set tema           kirmizi-fosfor
+
+# set zemin          #0c0909
+# set sayfa-cerceve  #2a1e20
+# set cubuk-zemin    #171011
+# set cubuk-on       #d1908c   # govde yazisi: sonuk kirmizi fosfor
+# set vurgu          #ff5f57
+# set uyari          #e3b341
+# set hata           #ff1e1e   # vurgudan daha cig: hata bagirmali
+# set arama-zemin    #e3b341
+# set arama-aktif    #ff5f57
+# set panel-zemin    #100b0c
+# set panel-secili   #2e1b1d
+# set sonuk          #6b4b4d   # ikincil yazi: grup basligi, ipucu
+# set palet-zemin    #150f10   # eylem paleti (<C-k>)
+# set palet-cerceve  #35262a
+
+set yazitipi       Consolas   # yoksa Cascadia Mono / DejaVu Sans Mono / Courier New
+set yazitipi-boy   10
+
+# Arayuz dili: en (English) | tr (Türkçe) | de (Deutsch)
+# Calisirken :lang tr ya da Ctrl-K > dil; ikisi de buraya kalici yazar.
+set dil            en
+
+
+# ---------------------------------------------------------------------------
+# Duzen
+# ---------------------------------------------------------------------------
+set kenar-bosluk   14
+set sayfa-arasi    10
+set sutunlar       1          # 2 yaparsan acilista cift sayfa
+
+
+# ---------------------------------------------------------------------------
+# Davranis
+# ---------------------------------------------------------------------------
+set kaydirma-adimi       60
+set yatay-adim           40
+set yakinlastirma-adimi  1.15
+set en-az-yakinlastirma  0.10
+set en-cok-yakinlastirma 10.0
+set ters-renk            false    # gece modu ile acilsin istersen true
+set son-konum            true     # dosyayi kaldigi yerden ac
+set oturum               true     # kapatinca acik belgeleri hatirla, acilista geri getir
+set son-belgeler         10       # belge listesinin siniri (<C-Left>/<C-Right>, B);
+                                  # dolunca en uzun suredir bakilmayan cikar
+set kapanan-belgeler     3        # q ile kapatilanlardan kaci <C-e> ile geri acilir (1-10;
+                                  # Ctrl-K > ayarlar > geri-acma-siniri de buraya yazar)
+set onbellek             12       # bellekte tutulan islenmis sayfa sayisi
+set sigdir               genislik # genislik | sayfa | yok
+set durum-cubugu         true
+# set vurgu-rengi          #ffd54a  # metin vurgusu (sayfa beyaz: acik renk sec)
+set baslik-cubugu        true     # rubric'in temali ust bari (Ctrl-K > baslik-cubugu)
+set windows-basligi      false    # Windows'un kendi beyaz baslik cubugu
+# Ust bar da durum cubugu da suruklenince pencereyi tasir, cift tik buyutur.
+
+
+# ---------------------------------------------------------------------------
+# Durum cubugu ve pencere basligi
+#
+# Yer tutucular:
+#   {mod} {dosya} {ad} {yol} {sayfa} {toplam} {yuzde}
+#   {zoom} {sigdir} {sutun} {ters} {donme} {arama}
+#   {belgeler}  -> " [2/3]": listede kacinci belge (tek belgede bos)
+# Bilinmeyen bir yer tutucu programi dusurmez, oldugu gibi yazilir.
+# ---------------------------------------------------------------------------
+set durum-bicimi   {mod} {ad}{belgeler}  {sayfa}/{toplam} ({yuzde}%)  z:{zoom}%  {sigdir}{ters}{arama}
+set baslik-bicimi  {ad} [{sayfa}/{toplam}] - rubric
+
+# Daha terminalimsi bir satir istersen:
+# set durum-bicimi  $ {ad} :: {sayfa}/{toplam} [{yuzde}%] z{zoom}%{ters}{arama}
+
+
+# ---------------------------------------------------------------------------
+# Tuslar
+#
+# map <tus> <komut>  /  unmap <tus>
+# Tus yazimi: tek karakter (j, G, +), ozel tus (<Tab> <Esc> <Space> <Return>
+# <Up> <Down> <Left> <Right> <Prior> <Next> <Home> <End> <F1>..<F12>),
+# ctrl bileskesi (<C-d>, <C-r>, <C-0>).
+#
+# Komut olarak asagidaki ic komutlardan biri yazilir. Bir ':' komutu da
+# dogrudan baglanabilir:  map b :goto 1
+# Paletteki her dildeki ad da gecer: map x next-page / map x nächste-seite
+# (palet dosyaya hep asagidaki ic adi yazar, dil degisince bozulmasin diye).
+#
+#   asagi yukari sola saga
+#   yarim-asagi yarim-yukari sayfa-ileri sayfa-geri
+#   sonraki-sayfa onceki-sayfa ilk-sayfa son-sayfa
+#   yakinlastir uzaklastir sigdir-genislik sigdir-sayfa yakinlastirma-sifirla
+#   dondur ters-renk cift-sayfa icindekiler eylemler tam-ekran sunum durum-cubugu
+#   baslik-cubugu dil
+#   vurgu-kalemi vurgular vurgu-geri-al vurgulari-aktar
+#   ara-ileri ara-geri sonraki-bulgu onceki-bulgu vurguyu-kapat
+#   komut-modu cik geri-zipla ileri-zipla yeniden-yukle ac
+#   sonraki-belge onceki-belge belgeyi-kapat kapanani-ac belgeler
+#   isaret-koy isarete-git
+#   tema-<ad>  (her tema bir komut: map <F9> tema-kagit)
+# ---------------------------------------------------------------------------
+
+# Varsayilanlar zaten kurulu; burada yalnizca degistirmek istediklerini yaz.
+
+# Ornekler:
+# map <C-n> sonraki-sayfa
+# map <C-p> onceki-sayfa
+# map w     sigdir-genislik
+# map <F2>  :goto 1
+# unmap d
+
+
+# ---------------------------------------------------------------------------
+# Tusu dosyaya elle yazmak zorunda degilsin
+#
+# Uygulamada <C-k> eylem paletini acar: butun komutlar, ne ise yaradiklari ve
+# o anki tuslari tek listede. Bir komutun uzerinde yine <C-k> eylemleri getirir;
+# "tus ata" deyip istedigin bileskeye basinca onay ister ve atamayi buraya,
+# dosyanin sonundaki isaretli bloga kendisi yazar:
+#
+#     # >>> rubric: eylem paletinden yazildi >>>
+#     map <C-n> ters-renk
+#     # <<< rubric <<<
+#
+# O blok her yazista bastan uretilir; disindaki satirlara dokunulmaz. Blok
+# dosyanin sonunda durdugu icin ayni tusu hem yukarida hem blokta baglamissan
+# blok kazanir - paletten yaptigin son secim gecerli olur. Blogu elle de
+# duzenleyebilirsin ama palet bir daha yazdiginda duzenini bozar.

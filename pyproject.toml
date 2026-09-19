@@ -1,0 +1,10 @@
+[project]
+name = "rubric"
+version = "0.1.0"
+description = "zathura tadinda, vim tuslu belge okuyucu (Windows, tkinter + PyMuPDF)"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.12"
+dependencies = [
+    "pymupdf>=1.28.2",
+]
