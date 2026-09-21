@@ -2,10 +2,13 @@
 __pycache__/
 *.py[cod]
 
-# uv'nin sanal ortamı; `uv sync` ile geri gelir
+# uv virtual environment; recreate with `uv sync`
 .venv/
 
-# exe-yap.py çıktısı. Exe depoya değil, GitHub Releases'a konur.
+# exe-yap.py output. Executables go to GitHub Releases, not the repository.
 build/
 dist/
 *.spec
+
+# Local test scripts
+testler/
