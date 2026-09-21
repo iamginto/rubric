@@ -61,12 +61,6 @@ command is documented in there. A bad line is skipped, not fatal.
 Open documents and positions come back on restart. Reading state lives in
 `%LOCALAPPDATA%\rubric\durum.json`; delete it to clear history.
 
-## Why it's fast
-
-Only visible pages are rendered, so a 1612-page book opens in 0.6 s with 12
-pages in memory. Zoom events are coalesced into one redraw, and search runs in
-the background in small batches. No network access, ever. Highlights never
-touch the original PDF.
 
 ## License
 
