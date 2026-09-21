@@ -70,15 +70,6 @@ Counts work everywhere (`5j`). `Ctrl`+wheel zooms around the cursor.
 Themes (10) and language (English, Turkish, German) are picked from the
 palette too, or with `:theme` and `:lang`.
 
-## Also
-
-- **Split panes.** Two documents side by side, each with its own doc list,
-  zoom, search and marks.
-- **Highlight colors.** Select text, then `Enter` for the default color or a
-  color key (`y` `g` `b` `p` `o` `r` `m`). Keys and default are set in the palette.
-- **Printing** prints what you see, highlights included.
-- **Tray mode** (off by default): closing keeps rubric in the tray so it reopens instantly.
-
 ## Config
 
 Copy `rubricrc.ornek` to `%APPDATA%\rubric\rubricrc`. Every setting and
