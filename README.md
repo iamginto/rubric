@@ -47,6 +47,11 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `/` `?` `n` `N` | search |
 | `Shift`+drag, `V`, `u` | highlight, list, undo |
 | `m<x>` `'<x>` | set / jump to mark |
+| `M` `b` | add bookmark, bookmarks panel |
+| `<C-l>` | show links on the page |
+| `<C-p>` `P` | print, print dialog |
+| `<A-Right>` `<A-Left>` | send doc to right / left pane |
+| `<A-w>` `<A-o>` | switch pane, back to one pane |
 | `<C-o>` `<C-i>` | jump history |
 | `<C-Left>` `<C-Right>` `B` | switch documents, document list |
 | `q` `<C-e>` `Q` | close doc, reopen closed, quit |
@@ -64,6 +69,15 @@ Counts work everywhere (`5j`). `Ctrl`+wheel zooms around the cursor.
 
 Themes (10) and language (English, Turkish, German) are picked from the
 palette too, or with `:theme` and `:lang`.
+
+## Also
+
+- **Split panes.** Two documents side by side, each with its own doc list,
+  zoom, search and marks.
+- **Highlight colors.** Select text, then `Enter` for the default color or a
+  color key (`y` `g` `b` `p` `o` `r` `m`). Keys and default are set in the palette.
+- **Printing** prints what you see, highlights included.
+- **Tray mode** (off by default): closing keeps rubric in the tray so it reopens instantly.
 
 ## Config
 
