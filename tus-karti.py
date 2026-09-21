@@ -44,15 +44,11 @@ KENAR      = 34.0
 SUTUN_ARA  = 24.0
 SUTUN_EN   = (SAYFA_EN - 2 * KENAR - SUTUN_ARA) / 2
 TUS_EN     = 96.0                       # tus sutununun genisligi
-SATIR_BOY  = 11.0                       # 12.2 / 11.6'da tr/en kart ikinci sayfaya tasiyordu (dil, belge listesi satirlari)
+SATIR_BOY  = 9.5                        # 12.2 / 11.6 / 11.0 / 10.2 / 10.0'de tr/en kart ikinci sayfaya tasiyordu (dil, belgeler; yer imi, yazdir, baglantilar; yazdir-sec, baglantiya tik; bolmeler)
 BOY        = 7.8                        # govde punto
 UST        = 96.0                       # ilk satirin ustten uzakligi
 ALT_SINIR  = SAYFA_BOY - 46.0
 
-
-# --- komutlar: tanimlari rubric.py'de -----------------------------------------
-
-GRUPLAR = rubric.KOMUT_GRUPLARI
 
 # Kartin kendi metinleri, dil dil. Eksik olan Ingilizcesine duser (metin()).
 KART: dict[str, dict] = {
@@ -76,7 +72,8 @@ KART: dict[str, dict] = {
             ("wheel",          "scroll"),
             ("Ctrl+wheel",     "zoom in / out"),
             ("drag",           "grab and move the page"),
-            ("Shift+drag",     "highlight text (plain drag while the v pen is on)"),
+            ("click a link",   "follow it: page jump or browser"),
+            ("Shift+drag",     "select text, then Enter / colour key (b g p ...)  (v: pen)"),
             ("right click",    "delete a highlight  (u: undo)"),
             ("double click",   "open a heading in the panel"),
         ],
@@ -90,8 +87,8 @@ KART: dict[str, dict] = {
             (":set <name> <value>",  "change a setting while running"),
             (":map <key> <command>", "rebind a key"),
             (":unmap <key>",         "remove a key binding"),
-            (":bmark <name>",        "drop a bookmark  (:bm)"),
-            (":blist",               "list bookmarks"),
+            (":bmark <name>",        "bookmark here with a name  (:bm)"),
+            (":blist",               "bookmarks panel  (b)"),
             (":bdelete <name>",      "delete a bookmark"),
             (":nohl",                "clear search highlighting"),
             (":toc",                 "table of contents"),
@@ -141,7 +138,8 @@ KART: dict[str, dict] = {
             ("tekerlek",       "kaydır"),
             ("Ctrl+tekerlek",  "yakınlaştır / uzaklaştır"),
             ("sürükle",        "sayfayı tutup taşı"),
-            ("Shift+sürükle",  "metni vurgula (v ile kalem açıkken düz sürükle)"),
+            ("bağlantıya tık", "hedefe git: sayfa ya da tarayıcı"),
+            ("Shift+sürükle",  "metni seç, sonra Enter / renk tuşu (b g p ...)  (v: kalem)"),
             ("sağ tık",        "vurguyu sil  (u: geri al)"),
             ("çift tık",       "panelde başlığı aç"),
         ],
@@ -155,8 +153,8 @@ KART: dict[str, dict] = {
             (":set <ad> <değer>",  "ayarı çalışırken değiştir"),
             (":map <tuş> <komut>", "tuşu yeniden bağla"),
             (":unmap <tuş>",       "tuşun bağlantısını kaldır"),
-            (":bmark <ad>",        "yer imi bırak  (:bm)"),
-            (":blist",             "yer imlerini listele"),
+            (":bmark <ad>",        "buraya adlı yer imi  (:bm)"),
+            (":blist",             "yer imleri paneli  (b)"),
             (":bdelete <ad>",      "yer imini sil"),
             (":nohl",              "arama vurgusunu kapat"),
             (":toc",               "içindekiler"),
@@ -206,7 +204,8 @@ KART: dict[str, dict] = {
             ("Mausrad",        "scrollen"),
             ("Strg+Mausrad",   "vergrößern / verkleinern"),
             ("Ziehen",         "Seite greifen und verschieben"),
-            ("Shift+Ziehen",   "Text markieren (mit v-Stift einfach ziehen)"),
+            ("Klick auf Link", "folgen: Seitensprung oder Browser"),
+            ("Shift+Ziehen",   "Text wählen, dann Enter / Farbtaste (b g p ...)  (v: Stift)"),
             ("Rechtsklick",    "Markierung löschen  (u: rückgängig)"),
             ("Doppelklick",    "Überschrift im Panel öffnen"),
         ],
@@ -220,8 +219,8 @@ KART: dict[str, dict] = {
             (":set <Name> <Wert>",    "Einstellung zur Laufzeit ändern"),
             (":map <Taste> <Befehl>", "Taste neu belegen"),
             (":unmap <Taste>",        "Tastenbelegung entfernen"),
-            (":bmark <Name>",         "Lesezeichen setzen  (:bm)"),
-            (":blist",                "Lesezeichen auflisten"),
+            (":bmark <Name>",         "benanntes Lesezeichen hier  (:bm)"),
+            (":blist",                "Lesezeichen-Liste  (b)"),
             (":bdelete <Name>",       "Lesezeichen löschen"),
             (":nohl",                 "Suchhervorhebung ausschalten"),
             (":toc",                  "Inhaltsverzeichnis"),
@@ -429,7 +428,7 @@ def uret(cikti: str, dil: str = "en") -> str:
     harita = tus_haritasi()
     k = Kart(cikti, dil)
 
-    for grup, komutlar in GRUPLAR:
+    for grup, komutlar in rubric.KOMUT_GRUPLARI:
         if not any(harita.get(komut) for komut in komutlar):
             continue                    # tusu olmayan grup (temalar) kartta yer tutmasin
         k.grup_basligi(rubric.grup_adi(grup, dil))

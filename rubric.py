@@ -11,18 +11,320 @@ icinden ezilebilir; ic komutlar isimleriyle disariya acik.
 
 from __future__ import annotations
 
-import collections
+# Burada yalnizca tek-pencere devrinin gerektirdikleri: devreden kopya
+# (asagida) bunlarla isini bitirip cikar, digerlerini hic yuklemez.
 import ctypes
 import ctypes.wintypes as wt
-import json
 import os
 import sys
-import time
-import tkinter as tk
-from tkinter import filedialog
-from tkinter import font as tkfont
 
-import pymupdf
+# ---------------------------------------------------------------------------
+# Tek pencere: ikinci kopya dosyayi calisan rubric'e verir ve cikar
+# ---------------------------------------------------------------------------
+#
+# "Birlikte ac" ile her PDF'te yeni bir surec acilirsa acilisin bedeli her
+# seferinde bastan odeniyor: pymupdf'in ~30 MB'lik DLL'i, Tk, duzen hesabi.
+# Onun yerine, calisan bir rubric varsa yollar ona WM_COPYDATA ile verilir ve
+# bu surec **pymupdf'i hic import etmeden** kapanir - ikinci ve sonraki
+# acilislar boylece anlik olur. Bu yuzden bu blok `import pymupdf`in ustunde:
+# kazancin tamami o import'a hic girmemekten geliyor.
+#
+# Belge listesi zaten var (B, <C-Left/Right>), yani dosyalar tek pencerede
+# birikince kaybolmuyorlar. Ayri pencereler isteyen: `set tek-pencere false`.
+#
+# Neden yuva (socket) degil: dinleyen bir yuva Windows Guvenlik Duvari
+# penceresi actiriyor. WM_COPYDATA ayni oturumun icinde kalir, izin istemez.
+
+IPC_SINIF = "rubric.ileti.penceresi"
+_IPC_HWND_MESSAGE = -3
+_IPC_WM_COPYDATA = 0x004A
+_ipc_tutulan: list = []             # yordam + sinif: cop toplayici almasin
+
+
+class _KOPYAVERISI(ctypes.Structure):
+    """COPYDATASTRUCT"""
+    _fields_ = [("dwData", ctypes.c_size_t), ("cbData", wt.DWORD),
+                ("lpData", ctypes.c_void_p)]
+
+
+class _PENCERE_SINIFI(ctypes.Structure):
+    """WNDCLASSW"""
+    _fields_ = [("style", wt.UINT), ("lpfnWndProc", ctypes.c_void_p),
+                ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int),
+                ("hInstance", wt.HINSTANCE), ("hIcon", wt.HICON), ("hCursor", wt.HANDLE),
+                ("hbrBackground", wt.HBRUSH), ("lpszMenuName", wt.LPCWSTR),
+                ("lpszClassName", wt.LPCWSTR)]
+
+
+def _ipc_penceresi() -> int:
+    """Calisan rubric'in ileti penceresi; yoksa 0."""
+    try:
+        u32 = ctypes.windll.user32
+        u32.FindWindowExW.restype = wt.HWND
+        u32.FindWindowExW.argtypes = [wt.HWND, wt.HWND, wt.LPCWSTR, wt.LPCWSTR]
+        return int(u32.FindWindowExW(wt.HWND(_IPC_HWND_MESSAGE), None, IPC_SINIF, None) or 0)
+    except Exception:
+        return 0
+
+
+def _ipc_ver(hwnd: int, yollar: list[str]) -> bool:
+    """Yollari calisan rubric'e gonderir. Doner: oteki aldi mi."""
+    try:
+        u32 = ctypes.windll.user32
+        surec = wt.DWORD()
+        u32.GetWindowThreadProcessId(wt.HWND(hwnd), ctypes.byref(surec))
+        u32.AllowSetForegroundWindow(surec)     # oteki one gelebilsin
+        veri = ("\n".join(yollar) + "\0").encode("utf-16-le")
+        tampon = ctypes.create_string_buffer(veri, len(veri))
+        paket = _KOPYAVERISI(1, len(veri), ctypes.cast(tampon, ctypes.c_void_p))
+        u32.SendMessageTimeoutW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, ctypes.c_void_p,
+                                            wt.UINT, wt.UINT, ctypes.POINTER(ctypes.c_size_t)]
+        sonuc = ctypes.c_size_t(0)
+        # SMTO_ABORTIFHUNG: oteki kilitliyse burada beklemeyip kendimiz acariz
+        gonderildi = u32.SendMessageTimeoutW(wt.HWND(hwnd), _IPC_WM_COPYDATA, 0,
+                                             ctypes.byref(paket), 0x0002, 4000,
+                                             ctypes.byref(sonuc))
+        return bool(gonderildi) and bool(sonuc.value)
+    except Exception:
+        return False
+
+
+def _ipc_dinle(kuyruk: list) -> int:
+    """Ileti penceresini kurar; gelen yollar `kuyruk`a birikir (Tk onu yoklar).
+
+    Yordam Tk'nin ileti dongusunun icinden cagrilir (ayni is parcacigi), bu
+    yuzden burada Tcl'e dokunulmuyor: yalnizca listeye eklenir.
+    """
+    try:
+        u32 = ctypes.windll.user32
+        u32.DefWindowProcW.restype = ctypes.c_ssize_t
+        # argtypes sart: verilmezse ctypes lParam'i 32 bit sanip tasiyor
+        u32.DefWindowProcW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+        yordam_turu = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wt.HWND, wt.UINT,
+                                         wt.WPARAM, wt.LPARAM)
+
+        def yordam(hwnd, ileti, wp, lp):
+            if ileti != _IPC_WM_COPYDATA:
+                return u32.DefWindowProcW(hwnd, ileti, wp, lp)
+            try:
+                paket = ctypes.cast(lp, ctypes.POINTER(_KOPYAVERISI)).contents
+                metin = ctypes.wstring_at(paket.lpData, paket.cbData // 2).rstrip("\0")
+                kuyruk.append([y for y in metin.split("\n") if y])
+                return 1
+            except Exception:
+                return 0
+
+        sinif = _PENCERE_SINIFI()
+        sinif.lpfnWndProc = ctypes.cast(yordam_turu(yordam), ctypes.c_void_p)
+        sinif.hInstance = ctypes.windll.kernel32.GetModuleHandleW(None)
+        sinif.lpszClassName = IPC_SINIF
+        _ipc_tutulan.append(sinif)
+        u32.RegisterClassW.argtypes = [ctypes.POINTER(_PENCERE_SINIFI)]
+        u32.RegisterClassW(ctypes.byref(sinif))   # zaten kayitliysa da sorun degil
+        u32.CreateWindowExW.restype = wt.HWND
+        u32.CreateWindowExW.argtypes = [wt.DWORD, wt.LPCWSTR, wt.LPCWSTR, wt.DWORD,
+                                        ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_int, wt.HWND, wt.HMENU, wt.HINSTANCE,
+                                        ctypes.c_void_p]
+        return int(u32.CreateWindowExW(0, IPC_SINIF, "rubric", 0, 0, 0, 0, 0,
+                                       wt.HWND(_IPC_HWND_MESSAGE), None,
+                                       sinif.hInstance, None) or 0)
+    except Exception:
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Tepsi simgesi (Ctrl-K > ayarlar > tepsi)
+# ---------------------------------------------------------------------------
+#
+# Tepsi modunda kapatmak rubric'ten cikmaz, pencereyi gizleyip saatin yanina
+# bir simge koyar: Python, Tk ve MuPDF bellekte kalir, yeniden acilis anlik.
+# Simgenin mesajlarini ayri bir ileti penceresi alir; yordam yine Tk'nin
+# ileti dongusunun icinden cagrildigi icin Tcl'e dokunmaz, yalnizca listeye
+# yazar (bkz. _ipc_dinle) - Rubric._tepsi_yokla isler.
+
+_TEPSI_SINIF = "rubric.tepsi.penceresi"
+_TEPSI_MESAJ = 0x8000 + 1                   # WM_APP + 1
+_WM_LBUTTONUP, _WM_RBUTTONUP = 0x0202, 0x0205
+
+
+class _SIMGE_VERISI(ctypes.Structure):
+    """NOTIFYICONDATAW"""
+    _fields_ = [("cbSize", wt.DWORD), ("hWnd", wt.HWND), ("uID", wt.UINT),
+                ("uFlags", wt.UINT), ("uCallbackMessage", wt.UINT), ("hIcon", wt.HICON),
+                ("szTip", ctypes.c_wchar * 128), ("dwState", wt.DWORD),
+                ("dwStateMask", wt.DWORD), ("szInfo", ctypes.c_wchar * 256),
+                ("uVersion", wt.UINT), ("szInfoTitle", ctypes.c_wchar * 64),
+                ("dwInfoFlags", wt.DWORD), ("guidItem", ctypes.c_byte * 16),
+                ("hBalloonIcon", wt.HICON)]
+
+
+def _tepsi_simgesi(kuyruk: list, ikon_yolu: str, ipucu: str) -> tuple[int, object] | None:
+    """Simgeyi ekler. Doner: (ileti penceresi, simge verisi) ya da None.
+    Tiklamalar `kuyruk`a "sol" / "sag" diye duser."""
+    try:
+        u32 = ctypes.windll.user32
+        u32.DefWindowProcW.restype = ctypes.c_ssize_t
+        u32.DefWindowProcW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+        yordam_turu = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wt.HWND, wt.UINT,
+                                         wt.WPARAM, wt.LPARAM)
+
+        def yordam(hwnd, ileti, wp, lp):
+            if ileti == _TEPSI_MESAJ:
+                olay = lp & 0xFFFF
+                if olay == _WM_LBUTTONUP:
+                    kuyruk.append("sol")
+                elif olay == _WM_RBUTTONUP:
+                    kuyruk.append("sag")
+                return 0
+            return u32.DefWindowProcW(hwnd, ileti, wp, lp)
+
+        sinif = _PENCERE_SINIFI()
+        sinif.lpfnWndProc = ctypes.cast(yordam_turu(yordam), ctypes.c_void_p)
+        sinif.hInstance = ctypes.windll.kernel32.GetModuleHandleW(None)
+        sinif.lpszClassName = _TEPSI_SINIF
+        _ipc_tutulan.append(sinif)
+        u32.RegisterClassW.argtypes = [ctypes.POINTER(_PENCERE_SINIFI)]
+        u32.RegisterClassW(ctypes.byref(sinif))
+        u32.CreateWindowExW.restype = wt.HWND
+        u32.CreateWindowExW.argtypes = [wt.DWORD, wt.LPCWSTR, wt.LPCWSTR, wt.DWORD,
+                                        ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_int, wt.HWND, wt.HMENU, wt.HINSTANCE,
+                                        ctypes.c_void_p]
+        hwnd = u32.CreateWindowExW(0, _TEPSI_SINIF, "rubric", 0, 0, 0, 0, 0,
+                                   wt.HWND(_IPC_HWND_MESSAGE), None, sinif.hInstance, None)
+        if not hwnd:
+            return None
+        u32.LoadImageW.restype = wt.HANDLE
+        u32.LoadImageW.argtypes = [wt.HINSTANCE, wt.LPCWSTR, wt.UINT, ctypes.c_int,
+                                   ctypes.c_int, wt.UINT]
+        boy = u32.GetSystemMetrics(49)                      # SM_CXSMICON
+        ikon = u32.LoadImageW(None, ikon_yolu, 1, boy, boy, 0x10) if ikon_yolu else None
+        veri = _SIMGE_VERISI()
+        veri.cbSize = ctypes.sizeof(_SIMGE_VERISI)
+        veri.hWnd = hwnd
+        veri.uID = 1
+        veri.uFlags = 0x1 | 0x4 | (0x2 if ikon else 0)      # MESSAGE | TIP | ICON
+        veri.uCallbackMessage = _TEPSI_MESAJ
+        veri.hIcon = ikon
+        veri.szTip = ipucu[:127]
+        ctypes.windll.shell32.Shell_NotifyIconW.argtypes = [wt.DWORD,
+                                                            ctypes.POINTER(_SIMGE_VERISI)]
+        if not ctypes.windll.shell32.Shell_NotifyIconW(0, ctypes.byref(veri)):   # NIM_ADD
+            u32.DestroyWindow(hwnd)
+            return None
+        return int(hwnd), veri
+    except Exception:
+        return None
+
+
+def _tepsi_simgesini_kaldir(tepsi: tuple[int, object] | None) -> None:
+    if not tepsi:
+        return
+    hwnd, veri = tepsi
+    with contextlib.suppress(Exception):
+        ctypes.windll.shell32.Shell_NotifyIconW(2, ctypes.byref(veri))      # NIM_DELETE
+        if veri.hIcon:
+            ctypes.windll.user32.DestroyIcon(veri.hIcon)
+        ctypes.windll.user32.DestroyWindow(wt.HWND(hwnd))
+
+
+def _sayfa_olcucusu(belge):
+    """no -> `belge[no].rect` ile ayni boy, sayfayi yuklemeden.
+
+    Duzen acilista her sayfanin olcusunu ister; `belge[no]` sayfayi yukleyip
+    cozuyor, 1612 sayfalik kitapta 140 ms (bilgisayar yeni acildiysa dosyanin
+    hepsini diskten okuyarak cok daha uzun). PDF'te CropBox'i dogrudan okumak
+    + /Rotate (ust dugumden miras gelebilir; dugum basina bir kez aranir)
+    ayni sonucu 31 ms'de veriyor. 126 gercek PDF + dondurulmus sentetik
+    belgede birebir ayni cikti. PDF degilse ya da okunamazsa eski yol."""
+    if not belge.is_pdf:
+        return lambda no: belge[no].rect
+    donmeler: dict[int, int] = {}
+
+    def donme(xref: int, derinlik: int = 0) -> int:
+        if xref in donmeler:
+            return donmeler[xref]
+        tur, deger = belge.xref_get_key(xref, "Rotate")
+        if tur == "int":
+            sonuc = int(deger) % 360
+        else:
+            tur, deger = belge.xref_get_key(xref, "Parent")
+            sonuc = donme(int(deger.split()[0]), derinlik + 1)                 if tur == "xref" and derinlik < 32 else 0
+        donmeler[xref] = sonuc
+        return sonuc
+
+    def olc(no: int):
+        try:
+            r = belge.page_cropbox(no)
+            w, h = r.width, r.height
+            if donme(belge.page_xref(no)) % 180:
+                w, h = h, w
+            return pymupdf.Rect(0, 0, w, h)
+        except Exception:
+            return belge[no].rect
+    return olc
+
+
+def _tek_pencere_ister() -> bool:
+    """rubricrc'de `set tek-pencere false` yazmiyorsa evet.
+
+    rubricrc burada elle okunuyor: Yapilandirma sinifi da varsayilanlar da
+    asagida, yani pymupdf'ten sonra tanimli - oysa bu kararin pymupdf import
+    edilmeden verilmesi gerekiyor, kazanc oradan geliyor.
+    """
+    kok = os.environ.get("APPDATA") or os.path.expanduser("~")
+    try:
+        with open(os.path.join(kok, "rubric", "rubricrc"), encoding="utf-8") as f:
+            for satir in f:
+                p = satir.split("#")[0].split()
+                if len(p) >= 2 and p[0] == "set" and p[1] == "tek-pencere":
+                    return (p[2] if len(p) > 2 else "true").lower() not in (
+                        "0", "false", "off", "no", "hayir", "kapali", "nein", "aus")
+    except OSError:
+        pass
+    return True
+
+
+if __name__ == "__main__" and _tek_pencere_ister():
+    _calisan = _ipc_penceresi()
+    if _calisan and _ipc_ver(_calisan, [os.path.abspath(y) for y in sys.argv[1:]]):
+        raise SystemExit(0)
+
+import bisect                                     # noqa: E402
+import collections                                # noqa: E402
+import contextlib                                 # noqa: E402
+import json                                       # noqa: E402
+import queue                                      # noqa: E402
+import re                                         # noqa: E402
+import threading                                  # noqa: E402
+import time                                       # noqa: E402
+
+# Devreden kopya buraya hic gelmez: tkinter (Tcl + Tk DLL'leri) ve pymupdf
+# (~30 MB'lik MuPDF) yalnizca gercekten pencere acacak kopyada yuklenir.
+#
+# pymupdf import'u acilisin en buyuk parcasi (sicakken ~80 ms; bilgisayar yeni
+# acildiysa 30 MB'lik DLL diskten okundugu icin cok daha uzun). Ayri is
+# parcaciginda baslar: DLL diskten okunurken Python GIL'i birakiyor, bu arada
+# ana is parcacigi Tk'yi kurup pencereyi cizer. Belge acilmadan hemen once
+# _pymupdf_bekle() onu bekler; modul baska yerden import edildiyse (testler,
+# tus-karti.py) en sonda beklenir, yani disaridan bakan icin fark yok.
+pymupdf = None
+_pymupdf_isi = threading.Thread(target=__import__, args=("pymupdf",),
+                                name="pymupdf", daemon=True)
+_pymupdf_isi.start()
+
+import tkinter as tk                              # noqa: E402
+from tkinter import filedialog                    # noqa: E402
+from tkinter import font as tkfont                # noqa: E402
+
+
+def _pymupdf_bekle() -> None:
+    global pymupdf
+    if pymupdf is None:
+        _pymupdf_isi.join()
+        import pymupdf as _modul                  # is parcacigi yuklediyse anlik
+        pymupdf = _modul
 
 
 # ---------------------------------------------------------------------------
@@ -84,9 +386,40 @@ VARSAYILAN_AYAR = {
     # + bir pay. Kullanici 1..KAPANAN_EN_COK arasinda secer (Ctrl-K > ayarlar).
     "kapanan-belgeler": 3,         # kac kapanan belge geri acilabilir
     "onbellek":       12,          # bellekte tutulan islenmis sayfa sayisi
+    # Yalnizca "su sayfa" diyen bir baglantida (bkz. capa_etiketleri) gidilen
+    # yer bu kadar ms isaretli kalir; ayni sayfaya donen baglantida "hicbir sey
+    # olmadi" sanilmasin diye. 0 = hic isaretleme.
+    "capa-suresi":    1400,
+    # Bolunmus gorunumde imlecin durdugu bolme etkin olur ("taban"): sag
+    # belgenin uzerine gidip j'ye basan sagi kaydirir. false: bolme yalnizca
+    # tikla ve <A-w> ile degisir.
+    "fare-bolme":     True,
     "sigdir":         "genislik",  # acilis sigdirma: genislik | sayfa | yok
     "durum-cubugu":   True,
+    # Secilen metni hangi tus hangi renge boyar (tus:renk). Ctrl-K > vurgu
+    # renkleri buraya yazar.
+    "vurgu-tuslari":  "y:sari g:yesil b:mavi p:pembe o:turuncu r:kirmizi m:mor",
+    # Enter'in koydugu renk: VURGU_RENKLERI'nden biri. "sari" temanin
+    # `vurgu-rengi`ne baglidir, otekiler sabit. Ctrl-K > vurgu renkleri > bosluk.
+    "vurgu-varsayilan": "sari",
+    # Acik: ikinci kez acilan bir PDF calisan rubric'e gider (bkz. dosyanin
+    # basindaki "Tek pencere" notu). Kapatirsan her dosya kendi penceresinde
+    # acilir - ama acilisin tam bedelini de her seferinde oder.
+    "tek-pencere":    True,
+    # <C-p> Windows'un yazdirma penceresini acar (yazici, sayfa araligi,
+    # kopya). 2026-09-20'de "direkt bassin" denendi, kullanici 2026-09-21'de
+    # asamali hale geri dondu. False: <C-p> pencere acmadan
+    # `yazdirma-yazicisi`na basar.
+    "yazdirma-penceresi": True,
+    # yazdirma-penceresi false iken <C-p>'nin bastigi yazici. Bos ise Windows'un varsayilani kullanilir -
+    # ama Windows'ta varsayilan cogu kez "Microsoft Print to PDF" oluyor ve
+    # zaten PDF olan belgenin PDF'i cikiyor. Ctrl-K > yazici buraya yazar.
+    "yazdirma-yazicisi": "",
     "baslik-cubugu":  True,        # rubric'in kendi (temali) ust bari
+    # Tepsi modu (Ctrl-K > ayarlar > tepsi): kapatinca rubric cikmaz, saatin
+    # yanindaki simgeye iner; yeniden acilis anlik. Kullanici kendisi acar,
+    # varsayilan kapali. Gercekten cikmak: simgeye sag tik > cik.
+    "tepsi":          False,
     "windows-basligi": False,      # Windows'un beyaz baslik cubugu
 
     # --- bicimler ---
@@ -101,8 +434,25 @@ VARSAYILAN_AYAR = {
 # `kapanan-belgeler`in ust siniri: rubricrc'ye 50 yazilsa da 10'a iner.
 KAPANAN_EN_COK = 10
 
-# Palette [x] secim listesi acan komutlarin alt menu kipleri
-SECIM_KIPLERI = ("dil", "tema", "sinir")
+# Palette secim listesi acan komutlarin alt menu kipleri ("renk": vurgu renkleri)
+SECIM_KIPLERI = ("dil", "tema", "sinir", "renk", "yazici")
+
+# Vurgu kalemi renkleri. "sari" temanin `vurgu-rengi`ni kullanir (tema
+# degisince doner), otekiler sabit: beyaz sayfada carpma karisimiyla okunur
+# kalacak kadar acik fosforlu renkler. Secimden sonra Enter'in koydugu renk
+# bunlardan biri, `vurgu-varsayilan` ayari secer.
+VURGU_RENKLERI: dict[str, str | None] = {
+    "sari": None, "yesil": "#7cf29a", "mavi": "#7cc4ff", "pembe": "#ff8fd1",
+    "turuncu": "#ffab4a", "kirmizi": "#ff7b7b", "mor": "#c9a2ff",
+}
+RENK_ADLARI: dict[str, dict[str, str]] = {
+    "en": {"sari": "yellow", "yesil": "green", "mavi": "blue", "pembe": "pink",
+           "turuncu": "orange", "kirmizi": "red", "mor": "purple"},
+    "tr": {"sari": "sarı", "yesil": "yeşil", "mavi": "mavi", "pembe": "pembe",
+           "turuncu": "turuncu", "kirmizi": "kırmızı", "mor": "mor"},
+    "de": {"sari": "gelb", "yesil": "grün", "mavi": "blau", "pembe": "rosa",
+           "turuncu": "orange", "kirmizi": "rot", "mor": "lila"},
+}
 
 # tus -> ic komut adi
 VARSAYILAN_TUSLAR = {
@@ -139,7 +489,16 @@ VARSAYILAN_TUSLAR = {
     # Ctrl+Shift+T degil: birden cok klavye dili kuruluyken Windows Ctrl+Shift'i
     # dil degistirmeye ayirabiliyor. <C-e> vim'deki satir kaydirma ama rubric'te bos.
     "<C-e>": "kapanani-ac",
+    # Bolmeler. Alt secildi, Ctrl+Shift degil (bkz. yukarida <C-e>): ok tuslari
+    # "saga at / sola at"in dogrudan karsiligi, <A-w> vim'in <C-w>'si gibi
+    # bolme degistirir, <A-o> yine vim'deki gibi tek bolmeye doner.
+    "<A-Right>": "bolme-saga",    "<A-Left>": "bolme-sola",
+    "<A-w>": "bolme-gec",         "<A-o>": "bolme-tek",
     "v":"vurgu-kalemi",    "V": "vurgular",        "u": "vurgu-geri-al",
+    "M": "yer-imi-koy",     "b": "yer-imleri",
+    # <C-S-p> degil: birden cok klavye dili kuruluyken Windows Ctrl+Shift'i
+    # dil degistirmeye ayirabiliyor (bkz. yukarida <C-e>).
+    "<C-p>": "yazdir",      "P": "yazdir-sec",      "<C-l>": "baglantilar",
 }
 
 OZEL_TUSLAR = {
@@ -208,7 +567,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "geri-zipla":     "back in the jump history",
         "ileri-zipla":    "forward in the jump history",
 
-        "vurgu-kalemi":   "highlighter pen: dragging highlights text (Shift+drag always does)",
+        "vurgu-kalemi":   "highlighter: drag, then Enter or a colour key (Shift+drag always)",
         "vurgular":       "highlight list - Enter go, x delete",
         "vurgu-geri-al":  "undo the last highlight add / delete",
         "vurgulari-aktar": "write a highlighted copy (<name>-highlighted.pdf, original untouched)",
@@ -221,8 +580,21 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "onceki-belge":   "previous document in the list (older)",
         "belgeyi-kapat":  "close this document, go to its neighbour (Q quits)",
         "kapanani-ac":    "reopen the last closed document where it was, same spot in the list",
+        "bolme-saga":     "throw this document to the RIGHT pane",
+        "bolme-sola":     "throw this document to the LEFT pane",
+        "bolme-gec":      "switch to the other pane",
+        "bolme-tek":      "back to one pane (the lists merge)",
         "geri-acma-siniri": "how many closed documents can be reopened: 1-10 (persistent)",
+        "yazici":         "printer for direct printing when yazdirma-penceresi is false (persistent)",
+        "tepsi":          "tray mode: closing hides rubric next to the clock, reopening is instant (persistent)",
         "belgeler":       "open documents - Enter go, x close",
+        "tema":           "colour theme: pick from a list (persistent)",
+        "vurgu-renkleri": "highlight colours: which key paints a selection which colour (persistent)",
+        "yer-imi-koy":    "bookmark this spot (named after its section)",
+        "yer-imleri":     "bookmarks - Enter go, x delete, a add",
+        "yazdir":         "print via the printer dialog (press again to cancel)",
+        "yazdir-sec":     "print: pick a printer and pages (press again while printing to cancel)",
+        "baglantilar":    "show / hide the links on the page",
     },
     "tr": {
         "asagi":          "satır satır aşağı kaydır",
@@ -266,7 +638,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "geri-zipla":     "zıplama geçmişinde geri",
         "ileri-zipla":    "zıplama geçmişinde ileri",
 
-        "vurgu-kalemi":   "vurgu kalemi: sürükleyince metni vurgular (Shift+sürükle her zaman)",
+        "vurgu-kalemi":   "vurgu kalemi: sürükle seç, sonra Enter ya da renk tuşu (Shift+sürükle her zaman)",
         "vurgular":       "vurgu listesi - Enter git, x sil",
         "vurgu-geri-al":  "son vurgu ekleme / silmesini geri al",
         "vurgulari-aktar": "vurgulu kopya PDF yaz (<ad>-vurgulu.pdf, aslı değişmez)",
@@ -279,8 +651,21 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "onceki-belge":   "listedeki önceki belge (daha eski)",
         "belgeyi-kapat":  "bu belgeyi kapat, komşusuna geç (Q çıkar)",
         "kapanani-ac":    "son kapatılan belgeyi kaldığı yerden, listedeki yerine geri aç",
+        "bolme-saga":     "belgeyi SAĞ bölmeye at",
+        "bolme-sola":     "belgeyi SOL bölmeye at",
+        "bolme-gec":      "öteki bölmeye geç",
+        "bolme-tek":      "tek bölmeye dön (listeler birleşir)",
         "geri-acma-siniri": "kapatılan kaç belge geri açılabilsin: 1-10 (kalıcı)",
+        "yazici":         "yazıcı: yazdirma-penceresi false iken doğrudan hangisine basılsın (kalıcı)",
+        "tepsi":          "tepsi modu: kapatınca saatin yanına iner, yeniden açılış anlık (kalıcı)",
         "belgeler":       "açık belgeler - Enter git, x kapat",
+        "tema":           "renk teması: listeden seç (kalıcı)",
+        "vurgu-renkleri": "vurgu renkleri: hangi tuş seçimi hangi renge boyar (kalıcı)",
+        "yer-imi-koy":    "buraya yer imi koy (adı bulunduğu bölümden)",
+        "yer-imleri":     "yer imleri - Enter git, x sil, a ekle",
+        "yazdir":         "yazdır: yazıcı penceresini aç (yazdırırken tekrar basınca iptal)",
+        "yazdir-sec":     "yazdır: yazıcı ve sayfa seç (yazdırırken tekrar basınca iptal)",
+        "baglantilar":    "sayfadaki bağlantıları göster / gizle",
     },
     "de": {
         "asagi":          "zeilenweise nach unten scrollen",
@@ -324,7 +709,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "geri-zipla":     "im Sprungverlauf zurück",
         "ileri-zipla":    "im Sprungverlauf vor",
 
-        "vurgu-kalemi":   "Textmarker: Ziehen markiert Text (Shift+Ziehen immer)",
+        "vurgu-kalemi":   "Textmarker: ziehen wählt, dann Enter oder Farbtaste (Shift+Ziehen immer)",
         "vurgular":       "Markierungsliste - Enter springen, x löschen",
         "vurgu-geri-al":  "letztes Markieren / Löschen rückgängig machen",
         "vurgulari-aktar": "markierte Kopie schreiben (<Name>-markiert.pdf, Original bleibt)",
@@ -337,13 +722,23 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "onceki-belge":   "voriges Dokument der Liste (älter)",
         "belgeyi-kapat":  "dieses Dokument schließen, zum Nachbarn (Q beendet)",
         "kapanani-ac":    "zuletzt geschlossenes Dokument an alter Stelle wieder öffnen",
+        "bolme-saga":     "Dokument nach RECHTS werfen",
+        "bolme-sola":     "Dokument nach LINKS werfen",
+        "bolme-gec":      "zum anderen Bereich wechseln",
+        "bolme-tek":      "zurück zu einem Bereich (Listen vereint)",
         "geri-acma-siniri": "wie viele geschlossene Dokumente wieder öffnen: 1-10 (dauerhaft)",
+        "yazici":         "Drucker für direktes Drucken bei yazdirma-penceresi false (dauerhaft)",
+        "tepsi":          "Tray-Modus: Schließen legt rubric neben die Uhr, erneutes Öffnen sofort (dauerhaft)",
         "belgeler":       "offene Dokumente - Enter öffnen, x schließen",
+        "tema":           "Farbthema: aus einer Liste wählen (dauerhaft)",
+        "vurgu-renkleri": "Markerfarben: welche Taste eine Auswahl in welcher Farbe markiert (dauerhaft)",
+        "yer-imi-koy":    "Lesezeichen hier setzen (nach dem Abschnitt benannt)",
+        "yer-imleri":     "Lesezeichen - Enter springen, x löschen, a hinzufügen",
+        "yazdir":         "über den Druckdialog drucken (erneut drücken: abbrechen)",
+        "yazdir-sec":     "drucken: Drucker und Seiten wählen (erneut drücken: abbrechen)",
+        "baglantilar":    "Links auf der Seite zeigen / verbergen",
     },
 }
-# Hangi adlarin ic komut oldugunu soyleyen tablo (testler ve eski betikler
-# bu adla ariyor); metinleri icin aciklama() kullan.
-KOMUT_ACIKLAMA = ACIKLAMALAR["en"]
 
 # Komutlarin sunulus sirasi; hem palet hem tus karti ayni bolumleri kullanir.
 # Ilk eleman grubun kimligi, ekrandaki adi GRUP_ADLARI'ndan gelir.
@@ -358,27 +753,38 @@ KOMUT_GRUPLARI = [
         "yakinlastirma-sifirla", "dondur", "cift-sayfa", "ters-renk",
     ]),
     ("ekran", ["icindekiler", "eylemler", "tam-ekran", "sunum", "durum-cubugu",
-               "baslik-cubugu", "dil"]),
+               "baslik-cubugu", "baglantilar", "dil"]),
     ("arama", ["ara-ileri", "ara-geri", "sonraki-bulgu", "onceki-bulgu",
                "vurguyu-kapat"]),
-    ("isaret ve ziplama", ["isaret-koy", "isarete-git", "geri-zipla",
-                           "ileri-zipla"]),
+    ("isaret ve ziplama", ["isaret-koy", "isarete-git", "yer-imi-koy", "yer-imleri",
+                           "geri-zipla", "ileri-zipla"]),
     ("vurgu", ["vurgu-kalemi", "vurgular", "vurgu-geri-al", "vurgulari-aktar"]),
     ("dosya", ["ac", "belgeler", "sonraki-belge", "onceki-belge", "belgeyi-kapat",
-               "kapanani-ac", "yeniden-yukle", "komut-modu", "cik"]),
-    ("ayarlar", ["geri-acma-siniri"]),
+               "kapanani-ac", "yeniden-yukle", "yazdir", "yazdir-sec", "komut-modu",
+               "cik"]),
+    ("bolmeler", ["bolme-saga", "bolme-sola", "bolme-gec", "bolme-tek"]),
+    ("ayarlar", ["geri-acma-siniri", "yazici", "tepsi"]),
+    # Temalar gibi: palette tek satir, Enter renk listesini acar; tusu yok.
+    ("vurgu renkleri", ["vurgu-renkleri"]),
+    # Palette tek satir, en altta: Enter secim listesini acar (dil gibi). tema-<ad>
+    # komutlari gruplarda yok, palette gorunmez; :neon, map x tema-buz icin durur.
+    ("temalar", ["tema"]),
 ]
 
 GRUP_ADLARI: dict[str, dict[str, str]] = {
     "en": {"gezinme": "navigation", "yakinlastirma ve duzen": "zoom and layout",
            "ekran": "display", "arama": "search", "isaret ve ziplama": "marks and jumps",
-           "vurgu": "highlights", "dosya": "file", "ayarlar": "settings"},
+           "vurgu": "highlights", "dosya": "file", "ayarlar": "settings", "temalar": "themes", "bolmeler": "panes",
+           "vurgu renkleri": "highlight colours"},
     "tr": {"gezinme": "gezinme", "yakinlastirma ve duzen": "yakınlaştırma ve düzen",
            "ekran": "ekran", "arama": "arama", "isaret ve ziplama": "işaret ve zıplama",
-           "vurgu": "vurgu", "dosya": "dosya", "ayarlar": "ayarlar"},
+           "vurgu": "vurgu", "dosya": "dosya", "ayarlar": "ayarlar", "temalar": "temalar",
+           "bolmeler": "bölmeler",
+           "vurgu renkleri": "vurgu renkleri"},
     "de": {"gezinme": "Navigation", "yakinlastirma ve duzen": "Zoom und Layout",
            "ekran": "Anzeige", "arama": "Suche", "isaret ve ziplama": "Marken und Sprünge",
-           "vurgu": "Markierungen", "dosya": "Datei", "ayarlar": "Einstellungen"},
+           "vurgu": "Markierungen", "dosya": "Datei", "ayarlar": "Einstellungen",
+           "temalar": "Themen", "vurgu renkleri": "Markerfarben", "bolmeler": "Bereiche"},
 }
 
 # Arayuzun geri kalan metni. Ikili deger (tekil, cogul): hangisi oldugunu
@@ -406,7 +812,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgu_geri_alindi": "highlight undone",
         "vurgu_geri_geldi": "deleted highlight restored",
         "yalniz_pdf":       "highlights work in PDFs only",
-        "kalem_acik":       "pen on: drag -> highlight, right click -> delete, Esc puts it down",
+        "kalem_acik":       "pen on: drag, then Enter / colour key -> highlight, right click -> delete, Esc puts it down",
         "kalem_kapali":     "pen off",
         "secilecek_metin_yok": "no text to select here",
         "vurgulandi":       "highlighted: {metin}   (u: undo)",
@@ -464,12 +870,43 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "ters_renk_durum":  "inverted colors: {durum}",
         "sutun_n":          ("{n} column", "{n} columns"),
         "ust_bar_durum":    "top bar {durum}",
+        "tepsi_durum":      "tray mode {durum}",
+        "tepsi_ac":         "open",
+        "tepsi_cik":        "quit rubric",
         "pencere_cercevesi": "window frame: {e}",
         "ac_baslik":        "open document",
         "ac_belgeler":      "Documents",
         "ac_tumu":          "All files",
         "yer_imi":          "bookmark: {ad} (p{s})",
-        "yer_imi_yok":      "no bookmarks",
+        "yer_imi_yok":      "no bookmarks  ({tus}: bookmark this spot)",
+        "yer_imi_var":      "already bookmarked here: {ad}",
+        "mod_yer_imleri":   "[bookmarks]",
+        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   esc: drop",
+        "secim_birakildi":  "selection dropped",
+        "renk_baslik":      "highlight colours",
+        "renk_zaten":       "{tus} already paints {renk}",
+        "renk_catisma":     "! {tus} currently paints {renk}, it will be taken from there",
+        "renk_tusu_olmaz":  "! {tus} can't be a colour key (enter already paints the default)",
+        "renk_atandi":      "highlight colour {renk}: {tus}",
+        "renk_tema":        "theme",
+        "renk_varsayilan_atandi": "enter now paints {renk}",
+        "ipucu_renk":       "enter: bind key   space: make default   j/k: move   esc: back",
+        "yazdiriliyor":     "printing {i}/{n} -> {yazici}   ({tus}: cancel)",
+        "yazdirildi":       "printed: {sayfalar} -> {yazici}",
+        "yazdirma_iptal":   "printing cancelled",
+        "yazdirma_iptal_ediliyor": "cancelling the print job...",
+        "yazdirilamadi":    "printing failed: {e}",
+        "varsayilan_yazici_yok": "no default printer - pick one",
+        "baglanti_var":     ("links: {n} on this page", "links: {n} on this page"),
+        "baglanti_yok":     "links on - none on this page",
+        "baglanti_kapali":  "links hidden",
+        "mod_baglantilar":  "[links]",
+        "baglanti_hedef_sayfa": "-> p. {n}",
+        "baglanti_acildi":  "opened in the browser: {ne}",
+        "baglanti_acilamadi": "could not open the link: {e}",
+        "baglanti_guvensiz": "! link not followed (only http/https/mailto/ftp): {ne}",
+        "baglanti_cozulemedi": "link target not found: {ne}",
+        "baglanti_bilinmez": "link target unknown",
         "sayfa_dosyasi":    "page-{n}.png",
         "yazildi":          "written: {yol}",
         "yazilamadi":       "could not write: {e}",
@@ -496,10 +933,23 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tek_belge":        "only one document open",
         "kapatilacak_yok":  "no document open  (Q: quit, o: open)",
         "belge_kapandi":    "closed: {ad}  ({tus}: reopen)",
+        "yan_sol":          "left",
+        "yan_sag":          "right",
+        "bolme_belge_yok":  "no document to move",
+        "bolme_yok":        "not split - <A-Right> / <A-Left> throws a document to a side",
+        "bolme_zaten":      "already in the {yan} pane",
+        "bolmeye_tasindi":  "{ad} -> {yan} pane",
+        "bolmeye_gecildi":  "{yan} pane",
+        "bolme_kapandi":    ("pane closed, {n} document moved here",
+                             "pane closed, {n} documents moved here"),
+        "bolme_belgesiz_kapandi": "closed: {ad}  -  pane closed too  ({tus}: reopen)",
         "son_belge_kapandi": "closed: {ad}  -  no documents left  ({tus}: reopen, o: open, Q: quit)",
         "geri_acildi":      "reopened: {ad}",
         "geri_acildi_daha": "reopened: {ad}  ({n} more)",
         "geri_acilacak_yok": "no closed document to reopen",
+        "yazici_baslik":    "printer",
+        "yazici_sistem":    "Windows default",
+        "yazici_secildi":   "print goes to: {ad}",
         "sinir_baslik":     "reopen limit",
         "sinir_satir":      ("{n} document", "{n} documents"),
         "sinir_varsayilan": "default",
@@ -530,7 +980,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgu_geri_alindi": "vurgu geri alındı",
         "vurgu_geri_geldi": "silinen vurgu geri geldi",
         "yalniz_pdf":       "vurgu yalnızca PDF'te",
-        "kalem_acik":       "kalem açık: sürükle -> vurgula, sağ tık -> sil, Esc bırak",
+        "kalem_acik":       "kalem açık: sürükle, sonra Enter / renk tuşu -> vurgula, sağ tık -> sil, Esc bırak",
         "kalem_kapali":     "kalem kapalı",
         "secilecek_metin_yok": "burada seçilecek metin yok",
         "vurgulandi":       "vurgulandı: {metin}   (u: geri al)",
@@ -585,12 +1035,43 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "ters_renk_durum":  "ters renk: {durum}",
         "sutun_n":          "{n} sütun",
         "ust_bar_durum":    "üst bar {durum}",
+        "tepsi_durum":      "tepsi modu {durum}",
+        "tepsi_ac":         "aç",
+        "tepsi_cik":        "rubric'ten çık",
         "pencere_cercevesi": "pencere çerçevesi: {e}",
         "ac_baslik":        "belge aç",
         "ac_belgeler":      "Belgeler",
         "ac_tumu":          "Tümü",
         "yer_imi":          "yer imi: {ad} (s{s})",
-        "yer_imi_yok":      "yer imi yok",
+        "yer_imi_yok":      "yer imi yok  ({tus}: buraya yer imi koy)",
+        "yer_imi_var":      "burada zaten yer imi var: {ad}",
+        "mod_yer_imleri":   "[yer imleri]",
+        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   esc: bırak",
+        "secim_birakildi":  "seçim bırakıldı",
+        "renk_baslik":      "vurgu renkleri",
+        "renk_zaten":       "{tus} zaten {renk} boyuyor",
+        "renk_catisma":     "! {tus} şu an {renk} boyuyor, ondan alınacak",
+        "renk_tusu_olmaz":  "! {tus} renk tuşu olamaz (enter zaten varsayılanı koyar)",
+        "renk_atandi":      "vurgu rengi {renk}: {tus}",
+        "renk_tema":        "tema",
+        "renk_varsayilan_atandi": "enter artık {renk} boyuyor",
+        "ipucu_renk":       "enter: tuş ata   boşluk: varsayılan yap   j/k: gez   esc: geri",
+        "yazdiriliyor":     "yazdırılıyor {i}/{n} -> {yazici}   ({tus}: iptal)",
+        "yazdirildi":       "yazdırıldı: {sayfalar} -> {yazici}",
+        "yazdirma_iptal":   "yazdırma iptal edildi",
+        "yazdirma_iptal_ediliyor": "yazdırma iptal ediliyor...",
+        "yazdirilamadi":    "yazdırılamadı: {e}",
+        "varsayilan_yazici_yok": "varsayılan yazıcı yok - seçmen gerekiyor",
+        "baglanti_var":     "bağlantılar: bu sayfada {n}",
+        "baglanti_yok":     "bağlantılar açık - bu sayfada yok",
+        "baglanti_kapali":  "bağlantılar gizlendi",
+        "mod_baglantilar":  "[bağlantılar]",
+        "baglanti_hedef_sayfa": "-> s. {n}",
+        "baglanti_acildi":  "tarayıcıda açıldı: {ne}",
+        "baglanti_acilamadi": "bağlantı açılamadı: {e}",
+        "baglanti_guvensiz": "! bağlantı açılmadı (yalnızca http/https/mailto/ftp): {ne}",
+        "baglanti_cozulemedi": "bağlantının hedefi bulunamadı: {ne}",
+        "baglanti_bilinmez": "bağlantının hedefi bilinmiyor",
         "sayfa_dosyasi":    "sayfa-{n}.png",
         "yazildi":          "yazıldı: {yol}",
         "yazilamadi":       "yazılamadı: {e}",
@@ -617,10 +1098,22 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tek_belge":        "açık tek belge bu",
         "kapatilacak_yok":  "açık belge yok  (Q: çık, o: aç)",
         "belge_kapandi":    "kapatıldı: {ad}  ({tus}: geri aç)",
+        "yan_sol":          "sol",
+        "yan_sag":          "sağ",
+        "bolme_belge_yok":  "taşınacak belge yok",
+        "bolme_yok":        "bölme yok - <A-Right> / <A-Left> belgeyi bir yana atar",
+        "bolme_zaten":      "zaten {yan} bölmede",
+        "bolmeye_tasindi":  "{ad} -> {yan} bölme",
+        "bolmeye_gecildi":  "{yan} bölme",
+        "bolme_kapandi":    "bölme kapandı, {n} belge bu listeye katıldı",
+        "bolme_belgesiz_kapandi": "kapatıldı: {ad}  -  bölme de kapandı  ({tus}: geri aç)",
         "son_belge_kapandi": "kapatıldı: {ad}  -  açık belge kalmadı  ({tus}: geri aç, o: aç, Q: çık)",
         "geri_acildi":      "geri açıldı: {ad}",
         "geri_acildi_daha": "geri açıldı: {ad}  (sırada {n} tane daha)",
         "geri_acilacak_yok": "geri açılacak kapanmış belge yok",
+        "yazici_baslik":    "yazıcı",
+        "yazici_sistem":    "Windows varsayılanı",
+        "yazici_secildi":   "yazdır bundan sonra: {ad}",
         "sinir_baslik":     "geri açma sınırı",
         "sinir_satir":      "{n} belge",
         "sinir_varsayilan": "varsayılan",
@@ -649,7 +1142,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgu_geri_alindi": "Markierung rückgängig gemacht",
         "vurgu_geri_geldi": "gelöschte Markierung wiederhergestellt",
         "yalniz_pdf":       "Markierungen nur in PDFs",
-        "kalem_acik":       "Stift an: ziehen -> markieren, Rechtsklick -> löschen, Esc legt ihn weg",
+        "kalem_acik":       "Stift an: ziehen, dann Enter / Farbtaste -> markieren, Rechtsklick -> löschen, Esc legt ihn weg",
         "kalem_kapali":     "Stift aus",
         "secilecek_metin_yok": "hier gibt es keinen Text zum Auswählen",
         "vurgulandi":       "markiert: {metin}   (u: rückgängig)",
@@ -706,12 +1199,43 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "ters_renk_durum":  "invertierte Farben: {durum}",
         "sutun_n":          ("{n} Spalte", "{n} Spalten"),
         "ust_bar_durum":    "Titelleiste {durum}",
+        "tepsi_durum":      "Tray-Modus {durum}",
+        "tepsi_ac":         "öffnen",
+        "tepsi_cik":        "rubric beenden",
         "pencere_cercevesi": "Fensterrahmen: {e}",
         "ac_baslik":        "Dokument öffnen",
         "ac_belgeler":      "Dokumente",
         "ac_tumu":          "Alle Dateien",
         "yer_imi":          "Lesezeichen: {ad} (S.{s})",
-        "yer_imi_yok":      "keine Lesezeichen",
+        "yer_imi_yok":      "keine Lesezeichen  ({tus}: Lesezeichen hier setzen)",
+        "yer_imi_var":      "hier ist schon ein Lesezeichen: {ad}",
+        "mod_yer_imleri":   "[Lesezeichen]",
+        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   esc: verwerfen",
+        "secim_birakildi":  "Auswahl verworfen",
+        "renk_baslik":      "Markerfarben",
+        "renk_zaten":       "{tus} markiert schon {renk}",
+        "renk_catisma":     "! {tus} markiert gerade {renk} und wird dort entfernt",
+        "renk_tusu_olmaz":  "! {tus} geht nicht als Farbtaste (Enter setzt schon die Standardfarbe)",
+        "renk_atandi":      "Markerfarbe {renk}: {tus}",
+        "renk_tema":        "Thema",
+        "renk_varsayilan_atandi": "Enter markiert jetzt {renk}",
+        "ipucu_renk":       "enter: Taste zuweisen   leer: Standard   j/k: bewegen   esc: zurück",
+        "yazdiriliyor":     "drucke {i}/{n} -> {yazici}   ({tus}: abbrechen)",
+        "yazdirildi":       "gedruckt: {sayfalar} -> {yazici}",
+        "yazdirma_iptal":   "Druck abgebrochen",
+        "yazdirma_iptal_ediliyor": "Druck wird abgebrochen...",
+        "yazdirilamadi":    "Drucken fehlgeschlagen: {e}",
+        "varsayilan_yazici_yok": "kein Standarddrucker - bitte auswählen",
+        "baglanti_var":     ("Links: {n} auf dieser Seite", "Links: {n} auf dieser Seite"),
+        "baglanti_yok":     "Links an - keine auf dieser Seite",
+        "baglanti_kapali":  "Links verborgen",
+        "mod_baglantilar":  "[Links]",
+        "baglanti_hedef_sayfa": "-> S. {n}",
+        "baglanti_acildi":  "im Browser geöffnet: {ne}",
+        "baglanti_acilamadi": "Link konnte nicht geöffnet werden: {e}",
+        "baglanti_guvensiz": "! Link nicht geöffnet (nur http/https/mailto/ftp): {ne}",
+        "baglanti_cozulemedi": "Linkziel nicht gefunden: {ne}",
+        "baglanti_bilinmez": "Linkziel unbekannt",
         "sayfa_dosyasi":    "seite-{n}.png",
         "yazildi":          "geschrieben: {yol}",
         "yazilamadi":       "Schreiben fehlgeschlagen: {e}",
@@ -738,10 +1262,23 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tek_belge":        "nur ein Dokument offen",
         "kapatilacak_yok":  "kein Dokument offen  (Q: beenden, o: öffnen)",
         "belge_kapandi":    "geschlossen: {ad}  ({tus}: wieder öffnen)",
+        "yan_sol":          "linken",
+        "yan_sag":          "rechten",
+        "bolme_belge_yok":  "kein Dokument zum Verschieben",
+        "bolme_yok":        "nicht geteilt - <A-Right> / <A-Left> wirft ein Dokument zur Seite",
+        "bolme_zaten":      "schon im {yan} Bereich",
+        "bolmeye_tasindi":  "{ad} -> {yan} Bereich",
+        "bolmeye_gecildi":  "{yan} Bereich",
+        "bolme_kapandi":    ("Bereich geschlossen, {n} Dokument übernommen",
+                             "Bereich geschlossen, {n} Dokumente übernommen"),
+        "bolme_belgesiz_kapandi": "geschlossen: {ad}  -  Bereich ebenfalls geschlossen  ({tus}: wieder öffnen)",
         "son_belge_kapandi": "geschlossen: {ad}  -  keine Dokumente mehr  ({tus}: wieder öffnen, o: öffnen, Q: beenden)",
         "geri_acildi":      "wieder geöffnet: {ad}",
         "geri_acildi_daha": "wieder geöffnet: {ad}  (noch {n})",
         "geri_acilacak_yok": "kein geschlossenes Dokument zum Wiederöffnen",
+        "yazici_baslik":    "Drucker",
+        "yazici_sistem":    "Windows-Standard",
+        "yazici_secildi":   "drucken geht an: {ad}",
         "sinir_baslik":     "Wiederöffnen-Limit",
         "sinir_satir":      ("{n} Dokument", "{n} Dokumente"),
         "sinir_varsayilan": "Standard",
@@ -820,6 +1357,12 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sonraki-belge": "next-doc", "onceki-belge": "prev-doc",
         "belgeyi-kapat": "close-doc", "belgeler": "documents",
         "kapanani-ac": "reopen-closed", "geri-acma-siniri": "reopen-limit",
+        "bolme-saga": "pane-right", "bolme-sola": "pane-left",
+        "bolme-gec": "pane-switch", "bolme-tek": "pane-only",
+        "yazici": "printer", "tema": "theme", "tepsi": "tray",
+        "vurgu-renkleri": "highlight-colours", "yer-imi-koy": "add-bookmark",
+        "yer-imleri": "bookmarks", "yazdir": "print", "yazdir-sec": "print-dialog",
+        "baglantilar": "show-links",
     },
     "tr": {
         "asagi": "aşağı", "yukari": "yukarı", "sola": "sola", "saga": "sağa",
@@ -846,6 +1389,12 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sonraki-belge": "sonraki-belge", "onceki-belge": "önceki-belge",
         "belgeyi-kapat": "belgeyi-kapat", "belgeler": "belgeler",
         "kapanani-ac": "kapananı-aç", "geri-acma-siniri": "geri-açma-sınırı",
+        "bolme-saga": "bölme-sağa", "bolme-sola": "bölme-sola",
+        "bolme-gec": "bölme-geç", "bolme-tek": "bölme-tek",
+        "yazici": "yazıcı", "tema": "tema", "tepsi": "tepsi",
+        "vurgu-renkleri": "vurgu-renkleri", "yer-imi-koy": "yer-imi-koy",
+        "yer-imleri": "yer-imleri", "yazdir": "yazdır", "yazdir-sec": "yazdır-seç",
+        "baglantilar": "bağlantılar",
     },
     "de": {
         "asagi": "runter", "yukari": "hoch", "sola": "links", "saga": "rechts",
@@ -873,6 +1422,13 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sonraki-belge": "nächstes-dokument", "onceki-belge": "voriges-dokument",
         "belgeyi-kapat": "dokument-schließen", "belgeler": "dokumente",
         "kapanani-ac": "wieder-öffnen", "geri-acma-siniri": "wiederöffnen-limit",
+        "bolme-saga": "bereich-rechts", "bolme-sola": "bereich-links",
+        "bolme-gec": "bereich-wechseln", "bolme-tek": "bereich-einzeln",
+        "yazici": "drucker", "tepsi": "tray",
+        "tema": "thema",
+        "vurgu-renkleri": "markerfarben", "yer-imi-koy": "lesezeichen-setzen",
+        "yer-imleri": "lesezeichen", "yazdir": "drucken", "yazdir-sec": "drucken-dialog",
+        "baglantilar": "links-zeigen",
     },
 }
 
@@ -961,17 +1517,12 @@ for _kimlik, (_tr, _en, _de, _atr, _aen, _ade) in _TEMA_METNI.items():
     for _dil, _ad, _acik in (("tr", _tr, _atr), ("en", _en, _aen), ("de", _de, _ade)):
         KOMUT_ADLARI[_dil][f"tema-{_kimlik}"] = _ad
         ACIKLAMALAR[_dil][f"tema-{_kimlik}"] = _acik
-# Palette tek satir, en altta: Enter secim listesini acar (dil gibi). tema-<ad>
-# komutlari gruplarda yok, palette gorunmez; :neon, map x tema-buz icin durur.
-for _dil, _ad, _acik in (("tr", "tema", "renk teması: listeden seç (kalıcı)"),
-                         ("en", "theme", "colour theme: pick from a list (persistent)"),
-                         ("de", "thema", "Farbthema: aus einer Liste wählen (dauerhaft)")):
-    KOMUT_ADLARI[_dil]["tema"] = _ad
-    ACIKLAMALAR[_dil]["tema"] = _acik
-KOMUT_GRUPLARI.append(("temalar", ["tema"]))
-GRUP_ADLARI["tr"]["temalar"] = "temalar"
-GRUP_ADLARI["en"]["temalar"] = "themes"
-GRUP_ADLARI["de"]["temalar"] = "Themen"
+
+
+def rgb(onaltili: str) -> tuple[float, float, float]:
+    """`#rrggbb` -> 0-1 araliginda (r, g, b)."""
+    h = onaltili.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
 
 
 def _parlaklik(onaltili: str) -> float:
@@ -979,8 +1530,7 @@ def _parlaklik(onaltili: str) -> float:
     once okunur mu diye bakmak icin."""
     def kanal(c: float) -> float:
         return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-    h = onaltili.lstrip("#")
-    r, g, b = (kanal(int(h[i:i + 2], 16) / 255) for i in (0, 2, 4))
+    r, g, b = (kanal(c) for c in rgb(onaltili))
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
@@ -1006,6 +1556,13 @@ def komut_kimligi(ad: str) -> str:
         return ad
     return TAKMA_ADLAR.get(katla(ad), ad)
 
+
+def tema_kimligi(ad: str) -> str:
+    """Temanin her dildeki adi (neon, eis, tema-buz) -> TEMALAR anahtari.
+    Taninmazsa katlanmis hali doner; TEMALAR'da olup olmadigina cagiran bakar."""
+    kimlik = komut_kimligi(ad)
+    return kimlik[5:] if kimlik.startswith("tema-") else katla(ad)
+
 # Paletten yapilan tus atamalari rubricrc'nin sonunda bu isaretlerin arasinda
 # toplanir; boylece kullanicinin elle yazdigi satirlara hic dokunulmaz.
 RC_BLOK_BAS = "# >>> rubric: eylem paletinden yazildi >>>"
@@ -1018,8 +1575,76 @@ def renk(anahtar: str) -> tuple[float, float, float]:
     Tus karti ile ikon betigi paleti kendi iclerinde tekrar yazmasin diye
     burada: tema degisince onlar da dondu sayilir.
     """
-    ham = VARSAYILAN_AYAR[anahtar].lstrip("#")
-    return tuple(int(ham[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return rgb(VARSAYILAN_AYAR[anahtar])
+
+
+# ---------------------------------------------------------------------------
+# Baglanti capasi
+#
+# Bir ic baglantinin PDF'teki hedefi cogu zaman yalnizca "su sayfa"dir: dizin
+# girdisi `/Fit`, LaTeX disi uretilmis kitaplarin hepsi oyle. PyMuPDF bunu
+# `to = Point(0, 0)` diye verir, yani sayfada nereye gidilecegi yazmaz.
+# Sonuc: "Fig. 2.18"e tiklayan sayfanin tepesine duser - ustelik hedef ayni
+# sayfaysa hicbir sey olmamis gibi gorunur.
+#
+# Cozum: hedefi **belgenin kendi metninden** bul. Tiklanan yazidan etiket
+# cikarilir ("Fig. 2.18a" -> 2.18a) ve hedef sayfada o etiketle **baslayan**
+# satir aranir - altyazi da ("Figure 2.18 ...") problem numarasi da
+# ("2.23 BIO Automobile Airbags") oyle yazilir. Bulunursa oraya gidilir ve
+# yer bir an isaretlenir; bulunamazsa eski davranis: sayfanin tepesi.
+#
+# Olculdu (temiz2.pdf, 40 rastgele sayfadaki 184 `/Fit` baglantisi): hepsi
+# capasini buldu. Desenler uc dilde; sayi "P25.59" gibi harf onekli ve
+# "5.38c" gibi alt sekil harfli olabilir, harfli bulunamazsa harfsizi denenir.
+# ---------------------------------------------------------------------------
+
+_CAPA_SAYI = r"([A-Za-z]?[0-9]+(?:[.\-][0-9]+)*[a-z]?)"
+CAPA_DESENLERI: list[tuple[str, tuple[str, ...]]] = [
+    (r"\b(?:figs?|figures?|sekil|şekil|abb|abbildung)\b\.?\s*" + _CAPA_SAYI,
+     ("Figure {n}", "Fig. {n}", "Şekil {n}", "Abbildung {n}")),
+    (r"\b(?:tables?|tablo|tabelle|tab)\b\.?\s*" + _CAPA_SAYI,
+     ("Table {n}", "Tablo {n}", "Tabelle {n}")),
+    (r"\b(?:eqs?|eqn|equations?|denklem|gleichung)\b\.?\s*\(?" + _CAPA_SAYI,
+     ("({n})", "Equation {n}", "Denklem {n}")),
+    (r"\b(?:examples?|örnek|ornek|beispiel)\b\.?\s*" + _CAPA_SAYI,
+     ("Example {n}", "Örnek {n}", "Beispiel {n}")),
+    (r"\b(?:problems?|exercises?|alıştırma|alistirma|aufgabe)\b\.?\s*" + _CAPA_SAYI,
+     ("Problem {n}", "Exercise {n}", "Alıştırma {n}", "Aufgabe {n}")),
+    (r"\b(?:sections?|sec|chapters?|chap|bölüm|bolum|kapitel|abschnitt)\b\.?\s*"
+     + _CAPA_SAYI, ()),
+    # Kaynakca: LaTeX'in \cite'i "[12]" yazar, hedefteki girdi de oyle baslar.
+    (r"\[([0-9]{1,3})\]", ("[{n}]",)),
+]
+# Anahtar kelimesiz baglanti: bastaki sayi (dizin girdisi, "2.5 FREELY FALLING")
+_CAPA_BAS_SAYI = re.compile(r"^\(?" + _CAPA_SAYI + r"\)?")
+# Kaynakcada sayi yoksa yazar adi: "(Smith, 2019)" -> hedefte "Smith" ile baslayan satir
+_CAPA_YAZAR = re.compile(r"\b([A-ZÇĞİÖŞÜ][\w'\-]{2,})")
+
+
+def capa_etiketleri(metin: str) -> tuple[list[str], str | None]:
+    """Tiklanan yazidan hedef satirin baslangic adaylarini cikarir.
+
+    Doner: (genisletilmis adaylar, ciplak etiket). Genisletilmis adaylar
+    ("Figure 2.18") satir icinde de aranabilir; ciplak etiket ("2.18") cok
+    siradan oldugu icin yalnizca satir basinda sayilir.
+    """
+    t = " ".join(metin.split())
+    for desen, kaliplar in CAPA_DESENLERI:
+        m = re.search(desen, t, re.I)
+        if not m:
+            continue
+        n = m.group(1)
+        adaylar = [k.format(n=n) for k in kaliplar]
+        # "Fig. 5.38c" -> altyazi cogu kitapta harfsiz: "Figure 5.38"
+        if n[-1:].isalpha() and len(n) > 1 and n[-2].isdigit():
+            adaylar += [k.format(n=n[:-1]) for k in kaliplar]
+            return adaylar, n[:-1]
+        return adaylar, n
+    m = _CAPA_BAS_SAYI.match(t)
+    if m:
+        return [], m.group(1)
+    m = _CAPA_YAZAR.search(t)
+    return ([], m.group(1)) if m else ([], None)
 
 
 def veri_dizini() -> str:
@@ -1127,8 +1752,7 @@ class Yapilandirma:
                 return False
             self.ayar[anahtar] = d.lower()
         elif anahtar == "tema":
-            kimlik = komut_kimligi(d)               # her dildeki ad da olur: neon, eis
-            kimlik = kimlik[5:] if kimlik.startswith("tema-") else katla(d)
+            kimlik = tema_kimligi(d)                # her dildeki ad da olur: neon, eis
             if kimlik not in TEMALAR:
                 self.hatalar.append(("bilinmeyen_tema", {"ad": d,
                                      "secenekler": " ".join(TEMALAR)}))
@@ -1171,7 +1795,6 @@ def _yorumsuz(deger: str) -> str:
 class Durum:
     def __init__(self):
         self.yol = os.path.join(veri_dizini(), "durum.json")
-        self.veri: dict = {}
         try:
             with open(self.yol, encoding="utf-8") as f:
                 self.veri = json.load(f)
@@ -1193,6 +1816,57 @@ class Durum:
 
 
 # ---------------------------------------------------------------------------
+# Bolme (sol / sag gorunum)
+#
+# Iki belgeyi yan yana okumak icin. Uygulamanin geri kalani tek belge biliyor
+# gibi yazilmis - `self.belge`, `self.tuval`, `self.zoom`, `self.yerler` ...
+# Bunlarin hepsi **bakilan bolmenin** alanlari olsun diye asagida birer
+# ozellige (property) cevriliyor: `self.belge` = `self.bolmeler[self.etkin].belge`.
+# Boylece ciz / ara / vurgula / yazdir kodunun tek satiri degismeden, her
+# bolme kendi belgesini, kendi yakinlastirmasini, kendi aramasini tasiyor.
+# Bakilmayan bolmeyi cizmek icin `_bolmede(b)` etkin bolmeyi bir islik
+# degistirir.
+#
+# En cok iki bolme var (sol = 0, sag = 1); ucuncusu istenmedi ve durum cubugu
+# ile oturum kaydini gereksiz karmasiklastirirdi.
+# ---------------------------------------------------------------------------
+
+BOLME_ALANLARI = (
+    "cerceve", "tuval",
+    # belge ve listesi (her bolmenin kendi <C-Left>/<C-Right> sirasi var)
+    "belge", "pdf_yolu", "belgeler", "zoom", "donme", "sigdir", "sutunlar",
+    # duzen
+    "satirlar", "yerler", "_altlar", "toplam_yukseklik", "toplam_genislik",
+    "_olcu", "_hedef_zoom", "_zoom_ekran", "_zoom_isi", "_komsu_isi",
+    "onbellek", "tuval_ogeleri", "aktif_sayfa",
+    # arama
+    "bulgular", "bulgu_no", "son_desen", "arama_yonu", "arama_kuyrugu",
+    "arama_kimlik", "_aktif_bulgu", "_ilk_atlama",
+    # ziplama listesi ve isaretler
+    "zipla_gecmis", "zipla_ileri", "isaretler",
+    # vurgular
+    "vurgular", "_vurgu_xref", "vurgu_gecmisi", "kalem", "_secim", "_kelimeler",
+    "_bekleyen_vurgu",
+    # baglantilar
+    "baglantilar_acik", "_baglantilar", "_baglanti_cizili", "_imlecteki_baglanti",
+    "_baglanti_adayi", "_basis_noktasi", "_surukleniyor", "_satir_metinleri",
+    "_capa", "_capa_isi",
+    # icindekiler
+    "_icindekiler_hatira",
+)
+
+
+class Bolme:
+    """Tek bir gorunumun butun durumu. Alanlari Rubric.__init__ doldurur."""
+
+    __slots__ = BOLME_ALANLARI
+
+    def __init__(self):
+        for ad in BOLME_ALANLARI:
+            setattr(self, ad, None)
+
+
+# ---------------------------------------------------------------------------
 # Uygulama
 # ---------------------------------------------------------------------------
 
@@ -1201,6 +1875,11 @@ class Rubric(tk.Tk):
     def __init__(self, acilacak: str | list[str] | None = None):
         super().__init__()
 
+        # Once bolmeler: asagidaki `self.belge = ...` gibi atamalarin hepsi
+        # BOLME_ALANLARI ozelligi uzerinden etkin bolmeye yazilir.
+        self.bolmeler: list[Bolme] = [Bolme()]
+        self.etkin: int = 0
+
         self.yapi = Yapilandirma()
         self.yapi.yukle()
         self.ayar = self.yapi.ayar
@@ -1208,40 +1887,32 @@ class Rubric(tk.Tk):
         self.kalici = Durum()
         self.ayar["yazitipi"] = self.yazitipi_sec(self.ayar["yazitipi"])
 
-        # --- belge durumu ---
-        self.belge: pymupdf.Document | None = None
-        self.pdf_yolu: str = ""
-        # Acilis sirasindaki belge listesi (<C-Left>/<C-Right>). Yalnizca
-        # yollar: bellekte hep tek belge acik (self.belge), gerisinin kaldigi
-        # yer durum.json'da. Liste oturum olarak `_oturum` altinda saklanir.
-        self.belgeler: list[str] = []
+        # --- belge / gorunum durumu ---
+        # Bunlarin hepsi bolmenin alani (bkz. BOLME_ALANLARI); varsayilanlari
+        # _bolmeyi_sifirla veriyor ki ikinci bolme acilinca ayni yerden gelsin.
+        self._bolmeyi_sifirla(self.bolme)
         # q ile kapatilanlar, en yenisi sonda: {yol, sira, konum, zoom, sigdir}
         self.kapananlar: list[dict] = []
-        self.zoom: float = 1.0
-        self.donme: int = 0
-        self.sigdir: str = self.ayar["sigdir"]
-        self.sutunlar: int = max(1, int(self.ayar["sutunlar"]))
         self.ters: bool = bool(self.ayar["ters-renk"])
-
-        # --- gorunum durumu ---
-        self.satirlar: list[dict] = []     # duzen: her satir bir sayfa grubu
-        self.toplam_yukseklik: int = 0
-        self.toplam_genislik: float = 0
-        self._olcu: dict[int, tuple[float, float]] = {}   # sayfa -> (en, boy) pt
-        # yakinlastirma: olaylar hedefi gunceller, cizim bosta bir kez yapilir
-        self._hedef_zoom: float | None = None
-        self._zoom_ekran: tuple[float, float] = (0.0, 0.0)
-        self._zoom_isi = None
-        self._komsu_isi = None
-        self.onbellek: collections.OrderedDict = collections.OrderedDict()
-        self.tuval_ogeleri: dict[int, int] = {}
-        self.aktif_sayfa: int = 0
+        self._boyut_isi = None             # pencere boyu durulunca yenile
+        self._ipc_isi = None               # tek-pencere kuyruk yoklamasi
+        # --- tepsi modu (bkz. _tepsi_kur) ---
+        self._tepsi = None                 # (ileti penceresi, simge verisi)
+        self._tepsi_kuyruk: list = []      # simgeye tiklamalar: "sol" | "sag"
+        self._tepsi_isi = None
+        self._tepsi_menu = None
+        self._tamamen_cik: bool = False    # tepsi modunda da gercekten cik
+        self._ikon_yolu: str = ""
+        self._son_olcu: tuple[int, int] | None = None
 
         # --- kip / girdi durumu ---
         self.mod: str = "normal"           # normal | komut | arama | icindekiler
         self.sayac: str = ""
         self.bekleyen: str | None = None   # g, isaret-koy, isarete-git
         self.gecici_ileti: str = ""
+        self._ileti_rengi: str = self.ayar["cubuk-on"]
+        self._baslik: str | None = None    # pencere basligi ve durum cubugu
+        self._durum_yazili: tuple | None = None   # yalnizca degisince yazilir
 
         # --- eylem paleti ---
         self.palet_kip: str = "liste"      # liste | eylem | kaldir | yakala | onay
@@ -1253,29 +1924,13 @@ class Rubric(tk.Tk):
         self.alt_secim: int = 0
         self._palet_en: int = 96           # liste satirinin karakter genisligi
 
-        # --- arama ---
-        self.bulgular: list[tuple[int, pymupdf.Rect]] = []
-        self.bulgu_no: int = -1
-        self.son_desen: str = ""
-        self.arama_yonu: int = 1
-        self.arama_kuyrugu: list[int] = []
-        self.arama_kimlik: int = 0      # yeni arama eskisini gecersiz kilar
-        self._aktif_bulgu = None
-        self._ilk_atlama = False
+        self.panel_konumlari: list = []    # vurgu / yer imi / belge listesinde satir -> oge
 
-        # --- ziplama listesi / isaretler ---
-        self.zipla_gecmis: list[float] = []
-        self.zipla_ileri: list[float] = []
-        self.isaretler: dict[str, float] = {}
+        # --- baglanti gosterimi (<C-l>) ve tiklama ---
+        self._baglanti_iletisi: str = ""              # durum cubugundaki hedef ozeti
 
-        # --- metin vurgulari (highlight) ---
-        self.vurgular: list[dict] = []     # durum.json'daki kayitlarin kendisi
-        self._vurgu_xref: dict[str, int] = {}   # vurgu kimligi -> bellekteki not
-        self.vurgu_gecmisi: list[tuple[str, dict]] = []   # u ile geri alma
-        self.kalem: bool = False           # vurgu kalemi acik mi (v)
-        self._secim: dict | None = None    # suren surukleme secimi
-        self._kelimeler: dict[int, list] = {}   # sayfa -> kelime kutulari
-        self.panel_konumlari: list = []    # vurgu listesinde satir -> konum
+        # --- yazdirma: suren is (bkz. yazdir) ---
+        self._baski: dict | None = None
 
         self.komutlar = self._komut_tablosu()
         self._arayuzu_kur()
@@ -1288,7 +1943,129 @@ class Rubric(tk.Tk):
 
         if isinstance(acilacak, str):
             acilacak = [acilacak]
+        _pymupdf_bekle()                # pencere bu arada cizildi (cerceveyi_uygula)
         self.oturumu_yukle(acilacak or [])
+        self._ipc_kur()
+        if self.ayar["tepsi"]:
+            self._tepsi_kur()
+
+    # -- tek pencere: sonraki kopyalardan gelen dosyalar -------------------
+
+    def _ipc_kur(self) -> None:
+        """Ileti penceresini kurar ve kuyrugu yoklamaya baslar.
+
+        Yoklama (150 ms) WM_COPYDATA yordamindan Tcl'e dokunmamak icin:
+        yordam Tk'nin ileti dongusunun icinden cagriliyor, oradan Tk'ye is
+        yaptirmak yerine listeye birakip burada isliyoruz.
+        """
+        if not self.ayar["tek-pencere"] or _ipc_penceresi():
+            return                      # kapali ya da baska kopya zaten dinliyor
+        self._ipc_kuyruk: list = []
+        if _ipc_dinle(self._ipc_kuyruk):
+            self._ipc_isi = self.after(150, self._ipc_yokla)
+
+    def _ipc_yokla(self) -> None:
+        while self._ipc_kuyruk:
+            yollar = self._ipc_kuyruk.pop(0)
+            self._arkadakileri_ekle(yollar[:-1])
+            # Zaten bakilan belge yeniden yuklenmez (tepsiden donuste en sik
+            # durum bu; 1612 sayfalik kitapta bastan acmak ~150 ms).
+            if yollar and not (self.pdf_yolu and self._ayni_yol(yollar[-1], self.pdf_yolu)):
+                self.belgeyi_ac(yollar[-1])
+            self._one_gel()
+        # Tepside gizliyken gelen PDF beklemesin: 15 ms (gorunurken 150 yeter)
+        self._ipc_isi = self.after(15 if self._tepside() else 150, self._ipc_yokla)
+
+    def _one_gel(self) -> None:
+        """Simge durumundaysa aç, one getir. Dosya hangi pencereye gittiyse
+        kullanici onu gorsun diye."""
+        try:
+            if self.state() in ("iconic", "withdrawn"):     # withdrawn: tepsiden
+                self.deiconify()
+            self.lift()
+            self.focus_force()
+            self.tuval.focus_set()
+        except tk.TclError:
+            pass
+
+    # -- tepsi modu (Ctrl-K > ayarlar > tepsi) ------------------------------
+    #
+    # Kullanici "ilk acista yavas, sonra cok hizli" dedi: sicak acilis ~0,25 sn,
+    # ama rubric uzun sure kapali kaldiginda ya da bilgisayar yeni acildiginda
+    # Python, Tk ve ~30 MB'lik MuPDF diskten (ve Defender'dan) yeniden geciyor.
+    # Tepsi modunda rubric hic kapanmaz, sogumaz: kapatinca (pencere X'i, Q)
+    # konumlar ve oturum yazilir, pencere gizlenir, saatin yanina simge konur.
+    # Simgeye sol tik ya da yeniden acmak (kisayol, "Birlikte ac" -> tek-pencere
+    # yolu) pencereyi oldugu gibi geri getirir. Gercekten cikmak: sag tik > cik.
+    # Kullanici kendisi acar (varsayilan kapali); Windows'la kendiliginden
+    # baslamaz - istemedi.
+
+    def tepsi_degistir(self) -> None:
+        acik = not self.ayar["tepsi"]
+        self.ayar["tepsi"] = acik
+        if acik:
+            self._tepsi_kur()
+        else:
+            self._tepsi_kaldir()
+        self._kalici_bildir(self.m("tepsi_durum", durum=self.m("acik" if acik else "kapali")),
+                            self.rc_tus_yaz({}, ayarlar={"tepsi": "true" if acik else "false"}))
+
+    def _tepsi_kur(self) -> None:
+        if sys.platform != "win32" or self._tepsi:
+            return
+        self._tepsi = _tepsi_simgesi(self._tepsi_kuyruk, self._ikon_yolu, "rubric")
+        if self._tepsi and self._tepsi_isi is None:
+            self._tepsi_isi = self.after(100, self._tepsi_yokla)
+
+    def _tepsi_kaldir(self) -> None:
+        if self._tepsi_isi is not None:
+            self.after_cancel(self._tepsi_isi)
+            self._tepsi_isi = None
+        _tepsi_simgesini_kaldir(self._tepsi)
+        self._tepsi = None
+
+    def _tepside(self) -> bool:
+        try:
+            return self.state() == "withdrawn"
+        except tk.TclError:
+            return False
+
+    def _tepsi_yokla(self) -> None:
+        while self._tepsi_kuyruk:
+            if self._tepsi_kuyruk.pop(0) == "sol":
+                self._one_gel()
+            else:
+                self._tepsi_menusunu_ac()
+        self._tepsi_isi = self.after(15 if self._tepside() else 100, self._tepsi_yokla)
+
+    def _tepsi_menusunu_ac(self) -> None:
+        """Sag tik: ac / cik. Tk'nin kendi (Windows'ta yerel) acilir menusu."""
+        if self._tepsi_menu is None:
+            self._tepsi_menu = tk.Menu(self, tearoff=0)
+        menu = self._tepsi_menu
+        menu.delete(0, "end")
+        menu.add_command(label=self.m("tepsi_ac"), command=self._one_gel)
+        menu.add_separator()
+        menu.add_command(label=self.m("tepsi_cik"), command=self.tamamen_cik)
+        x, y = self.winfo_pointerxy()
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def _tepsiye_in(self) -> None:
+        """Tepsi modunda kapatma: her sey yazilir, pencere gizlenir; belge,
+        bolmeler, konum oldugu gibi bellekte kalir."""
+        for b in self.bolmeler:
+            with self._bolmede(b):
+                self._bekleyen_zoomu_birak()
+                self.konumu_kaydet()
+        self.oturumu_kaydet()
+        self.withdraw()
+
+    def tamamen_cik(self) -> None:
+        self._tamamen_cik = True
+        self.cik()
 
     # -- dil ve yazitipi ---------------------------------------------------
 
@@ -1319,16 +2096,12 @@ class Rubric(tk.Tk):
     def dili_ayarla(self, dil: str) -> None:
         """Arayuz dilini degistirir ve rubricrc'ye kalici yazar. Kullanici
         buraya dil_menusu()'nden ya da `:lang <kod>` ile gelir."""
-        diller = list(DILLER)
-        dil = dil.strip().lower()
-        if dil not in DILLER:
-            self.bildir(self.m("bilinmeyen_dil", dil=dil, secenekler=" ".join(diller)), "hata")
+        if not self.yapi.ata("dil", dil):
+            self.bildir(self.yapi.hata_metinleri()[-1], "hata")
             return
-        self.ayar["dil"] = dil
-        yazildi = self.rc_tus_yaz({}, ayarlar={"dil": dil})
+        yazildi = self.rc_tus_yaz({}, ayarlar={"dil": self.ayar["dil"]})
         self.metinleri_tazele()
-        self.bildir(self.m("dil_secildi") + ("" if yazildi else self.m("rc_yazilamadi_ek")),
-                    "vurgu" if yazildi else "hata")
+        self._kalici_bildir(self.m("dil_secildi"), yazildi)
 
     def tema_uygula(self, tema: str) -> None:
         """Temayi uygular ve rubricrc'ye `set tema` olarak kalici yazar.
@@ -1337,16 +2110,14 @@ class Rubric(tk.Tk):
             self.bildir(self.m("bilinmeyen_tema", ad=tema, secenekler=" ".join(TEMALAR)),
                         "hata")
             return
-        ters, sutunlar = self.ters, self.sutunlar   # o an acilmis gece modu / cift sayfa kalsin
         self.yapi.ata("tema", tema)
-        self.ayarlar_degisti()
-        if (self.ters, self.sutunlar) != (ters, sutunlar):
-            self.ters, self.sutunlar = ters, sutunlar
-            self.onbellek.clear()
-            self.yenile()
-        yazildi = self.rc_tus_yaz({}, ayarlar={"tema": tema})
-        self.bildir(self.m("tema_secildi", ad=self.ad(f"tema-{tema}"))
-                    + ("" if yazildi else self.m("rc_yazilamadi_ek")),
+        self.ayarlar_degisti(gorunumu_koru=True)    # o an acilmis gece modu / cift sayfa kalsin
+        self._kalici_bildir(self.m("tema_secildi", ad=self.ad(f"tema-{tema}")),
+                            self.rc_tus_yaz({}, ayarlar={"tema": tema}))
+
+    def _kalici_bildir(self, ileti: str, yazildi: bool) -> None:
+        """rubricrc'ye yazilan bir degisikligin iletisi; yazilamadiysa soyler."""
+        self.bildir(ileti + ("" if yazildi else self.m("rc_yazilamadi_ek")),
                     "vurgu" if yazildi else "hata")
 
     def metinleri_tazele(self) -> None:
@@ -1355,36 +2126,37 @@ class Rubric(tk.Tk):
         if self.mod == "palet":
             if self.palet_kip in ("yakala", "onay"):
                 self.yakala_goster()
+            elif self.palet_kip in ("renk-yakala", "renk-onay"):
+                self.renk_yakala_goster()
             elif self.palet_kip in ("eylem", "kaldir"):
                 self.alt_menuyu_kapat()
-            secili = self.palet_secili()
-            self.palet_doldur()
-            if secili:
-                self._palet_komuta_git(secili)
+            self._paleti_yeniden_doldur()
         self.durumu_tazele()
 
     # -- arayuz ------------------------------------------------------------
 
     def _arayuzu_kur(self) -> None:
+        """Pencerenin parcalari. Renk ve yazitipi burada verilmez, hepsi
+        _renkleri_uygula()'da: acilista da :set / tema degisiminde de o calisir."""
         self.title("rubric")
         # exe'de ikon paketin icinden (_MEIPASS), betikte dosyanin yanindan gelir
         ikon = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
                             "rubric.ico")
         if os.path.exists(ikon):
+            self._ikon_yolu = ikon          # tepsi simgesi de bunu kullanir
             try:
                 self.iconbitmap(default=ikon)
             except tk.TclError:
                 pass
         self.geometry("1000x760")
-        self.configure(bg=self.ayar["zemin"])
 
-        yt = (self.ayar["yazitipi"], self.ayar["yazitipi-boy"])
-
-        self.tuval = tk.Canvas(
-            self, bg=self.ayar["zemin"], highlightthickness=0, bd=0,
-            takefocus=True,
-        )
-        self.tuval.pack(side="top", fill="both", expand=True)
+        # Tuvaller bir kapta yan yana durur (bkz. "bolmeler"); tek bolmede kap
+        # da tek tuvali tasir, gorunum degismez.
+        self.tuval_alani = tk.Frame(self, bd=0)
+        self.tuval_alani.pack(side="top", fill="both", expand=True)
+        self.bolme_cizgi = tk.Frame(self.tuval_alani, width=1, bd=0)   # tam 1 px ayirici
+        self._tuval_kur(self.bolme)
+        self._bolmeleri_yerlestir()
 
         # Ust bar: Windows baslik cubugunun yerine, temaya uygun. "$ rubric" istemi,
         # dosya adi ve ASCII pencere dugmeleri. Suruklenir, cift tik buyutur,
@@ -1394,59 +2166,42 @@ class Rubric(tk.Tk):
         self.ust_cizgi.pack(side="bottom", fill="x")
         self.ust_dugmeler: dict[str, tk.Label] = {}
         for ad, metin in (("kapat", "[x]"), ("buyut", "[+]"), ("kucult", "[-]")):
-            d = tk.Label(self.ust_bar, text=metin, bd=0, padx=5, pady=3, font=yt)
+            d = tk.Label(self.ust_bar, text=metin, bd=0, padx=5, pady=3)
             d.pack(side="right")
             d.bind("<Enter>", lambda e, ad=ad: self._dugme_uzerinde(ad, True))
             d.bind("<Leave>", lambda e, ad=ad: self._dugme_uzerinde(ad, False))
             d.bind("<ButtonRelease-1>", lambda e, ad=ad: self._dugme_tiklandi(e, ad))
             self.ust_dugmeler[ad] = d
-        self.ust_istem = tk.Label(self.ust_bar, text="$ rubric", bd=0, padx=8, pady=3, font=yt)
+        self.ust_istem = tk.Label(self.ust_bar, text="$ rubric", bd=0, padx=8, pady=3)
         self.ust_istem.pack(side="left")
-        self.ust_ad = tk.Label(self.ust_bar, text="", anchor="w", bd=0, pady=3, font=yt)
+        self.ust_ad = tk.Label(self.ust_bar, text="", anchor="w", bd=0, pady=3)
         self.ust_ad.pack(side="left", fill="x", expand=True)
         self._ust_ad_ham = ""
-        self._ust_bari_bicimle()
 
         # Durum cubugu: kose yuvarlatma yok, tek satir, monospace.
-        self.cubuk = tk.Frame(self, bg=self.ayar["cubuk-zemin"], bd=0)
+        self.cubuk = tk.Frame(self, bd=0)
         self.cubuk.pack(side="bottom", fill="x")
-
-        self.durum = tk.Label(
-            self.cubuk, text="", anchor="w", bd=0, padx=8, pady=2,
-            bg=self.ayar["cubuk-zemin"], fg=self.ayar["cubuk-on"], font=yt,
-        )
+        self.durum = tk.Label(self.cubuk, text="", anchor="w", bd=0, padx=8, pady=2)
         self.durum.pack(side="left", fill="x", expand=True)
-
-        self.sag_durum = tk.Label(
-            self.cubuk, text="", anchor="e", bd=0, padx=8, pady=2,
-            bg=self.ayar["cubuk-zemin"], fg=self.ayar["vurgu"], font=yt,
-        )
+        self.sag_durum = tk.Label(self.cubuk, text="", anchor="e", bd=0, padx=8, pady=2)
         self.sag_durum.pack(side="right")
 
         # Komut / arama satiri; normalde gizli, ':' veya '/' ile acilir.
-        self.komut_girdi = tk.Entry(
-            self, bd=0, highlightthickness=0, insertwidth=8,
-            bg=self.ayar["cubuk-zemin"], fg=self.ayar["vurgu"],
-            insertbackground=self.ayar["vurgu"], font=yt,
-        )
+        self.komut_girdi = tk.Entry(self, bd=0, highlightthickness=0, insertwidth=8)
 
-        # Icindekiler paneli
-        self.panel = tk.Frame(self, bg=self.ayar["panel-zemin"], bd=0)
+        # Icindekiler / vurgu / belge paneli (ayni liste)
+        self.panel = tk.Frame(self, bd=0)
         # exportselection kapali: baska bir widget secim yapinca Tk bu listenin
         # secimini sessizce siliyor (palet listelerinde yasandi).
-        self.liste = tk.Listbox(
-            self.panel, bd=0, highlightthickness=0, activestyle="none",
-            exportselection=False,
-            bg=self.ayar["panel-zemin"], fg=self.ayar["cubuk-on"],
-            selectbackground=self.ayar["panel-secili"],
-            selectforeground=self.ayar["vurgu"], font=yt,
-        )
+        self.liste = tk.Listbox(self.panel, bd=0, highlightthickness=0, activestyle="none",
+                                exportselection=False)
         self.liste.pack(fill="both", expand=True)
         self.icindekiler_verisi: list[int] = []
         # Enter'la gidilen baslik: (satir, gidildikten sonraki aktif sayfa)
         self._icindekiler_hatira: tuple[int, int] | None = None
 
         self._paleti_kur()
+        self._renkleri_uygula()
 
     def _paleti_kur(self) -> None:
         """Eylem paleti: ortada duran, uzerine binen bir kart.
@@ -1454,116 +2209,151 @@ class Rubric(tk.Tk):
         Raycast'teki duzen: ustte arama satiri, ortada komutlar ve o anki
         tuslari, sag altta secili komutun eylemleri.
         """
-        yt = (self.ayar["yazitipi"], self.ayar["yazitipi-boy"])
-        yt_buyuk = (self.ayar["yazitipi"], self.ayar["yazitipi-boy"] + 3)
+        self.palet = tk.Frame(self, bd=0, highlightthickness=1)
 
-        self.palet = tk.Frame(
-            self, bg=self.ayar["palet-zemin"], bd=0, highlightthickness=1,
-            highlightbackground=self.ayar["palet-cerceve"],
-        )
-
-        self.palet_ust = tk.Frame(self.palet, bg=self.ayar["palet-zemin"])
+        self.palet_ust = tk.Frame(self.palet)
         self.palet_ust.pack(side="top", fill="x")
-        self.palet_onek = tk.Label(
-            self.palet_ust, text=">", bd=0, padx=9, pady=7, font=yt_buyuk,
-            bg=self.ayar["palet-zemin"], fg=self.ayar["vurgu"],
-        )
+        self.palet_onek = tk.Label(self.palet_ust, text=">", bd=0, padx=9, pady=7)
         self.palet_onek.pack(side="left")
         self.palet_desen = tk.StringVar()
-        self.palet_girdi = tk.Entry(
-            self.palet_ust, textvariable=self.palet_desen, bd=0,
-            highlightthickness=0, insertwidth=8, font=yt_buyuk,
-            bg=self.ayar["palet-zemin"], fg=self.ayar["cubuk-on"],
-            insertbackground=self.ayar["vurgu"],
-        )
+        self.palet_girdi = tk.Entry(self.palet_ust, textvariable=self.palet_desen, bd=0,
+                                    highlightthickness=0, insertwidth=8)
         self.palet_girdi.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        self.palet_cizgi_ust = tk.Frame(self.palet, bg=self.ayar["palet-cerceve"],
-                                        height=1)
+        self.palet_cizgi_ust = tk.Frame(self.palet, height=1)
         self.palet_cizgi_ust.pack(side="top", fill="x")
 
         # Alt ipucu cubugu once paketlenir; dar pencerede listeyi o kirpsin.
-        self.palet_alt = tk.Frame(self.palet, bg=self.ayar["cubuk-zemin"])
+        self.palet_alt = tk.Frame(self.palet)
         self.palet_alt.pack(side="bottom", fill="x")
-        self.palet_alt_sol = tk.Label(
-            self.palet_alt, text=self.m("palet_istem"), bd=0, padx=9, pady=3,
-            font=yt, bg=self.ayar["cubuk-zemin"], fg=self.ayar["sonuk"],
-        )
+        self.palet_alt_sol = tk.Label(self.palet_alt, text=self.m("palet_istem"), bd=0,
+                                      padx=9, pady=3)
         self.palet_alt_sol.pack(side="left")
-        self.palet_ipucu = tk.Label(
-            self.palet_alt, text="", anchor="e", bd=0, padx=9, pady=3, font=yt,
-            bg=self.ayar["cubuk-zemin"], fg=self.ayar["cubuk-on"],
-        )
+        self.palet_ipucu = tk.Label(self.palet_alt, text="", anchor="e", bd=0, padx=9, pady=3)
         self.palet_ipucu.pack(side="right")
 
-        self.palet_liste = tk.Listbox(
-            self.palet, bd=0, highlightthickness=0, activestyle="none",
-            takefocus=False, exportselection=False, font=yt,
-            bg=self.ayar["palet-zemin"], fg=self.ayar["cubuk-on"],
-            selectbackground=self.ayar["panel-secili"],
-            selectforeground=self.ayar["vurgu"],
-        )
+        self.palet_liste = tk.Listbox(self.palet, bd=0, highlightthickness=0, activestyle="none",
+                                      takefocus=False, exportselection=False)
         self.palet_liste.pack(side="top", fill="both", expand=True)
 
         # Sag alttaki eylem menusu (ve "hangi tusu kaldirayim" listesi).
-        self.alt_menu = tk.Frame(
-            self.palet, bg=self.ayar["panel-zemin"], bd=0, highlightthickness=1,
-            highlightbackground=self.ayar["palet-cerceve"],
-        )
-        self.alt_baslik = tk.Label(
-            self.alt_menu, text="", anchor="w", bd=0, padx=8, pady=4, font=yt,
-            bg=self.ayar["panel-zemin"], fg=self.ayar["sonuk"],
-        )
+        self.alt_menu = tk.Frame(self.palet, bd=0, highlightthickness=1)
+        self.alt_baslik = tk.Label(self.alt_menu, text="", anchor="w", bd=0, padx=8, pady=4)
         self.alt_baslik.pack(side="top", fill="x")
         # exportselection kapali: iki listbox ayni anda seciliyken Tk digerinin
         # secimini sessizce siliyor (alt menu acilinca ana liste sonuyordu).
-        self.alt_liste = tk.Listbox(
-            self.alt_menu, bd=0, highlightthickness=0, activestyle="none",
-            takefocus=False, exportselection=False, font=yt,
-            bg=self.ayar["panel-zemin"], fg=self.ayar["cubuk-on"],
-            selectbackground=self.ayar["panel-secili"],
-            selectforeground=self.ayar["vurgu"],
-        )
+        self.alt_liste = tk.Listbox(self.alt_menu, bd=0, highlightthickness=0, activestyle="none",
+                                    takefocus=False, exportselection=False)
         self.alt_liste.pack(side="top", fill="both", expand=True, pady=(0, 4))
 
         # Tus yakalama / onay ekrani - paletin ortasinda durur.
-        self.yakala = tk.Frame(
-            self.palet, bg=self.ayar["panel-secili"], bd=0, padx=22, pady=16,
-            highlightthickness=1, highlightbackground=self.ayar["vurgu"],
-        )
-        self.yakala_ust = tk.Label(
-            self.yakala, text="", font=yt_buyuk,
-            bg=self.ayar["panel-secili"], fg=self.ayar["vurgu"],
-        )
+        self.yakala = tk.Frame(self.palet, bd=0, padx=22, pady=16, highlightthickness=1)
+        self.yakala_ust = tk.Label(self.yakala, text="")
         self.yakala_ust.pack(side="top", pady=(0, 6))
-        self.yakala_orta = tk.Label(
-            self.yakala, text="", font=yt,
-            bg=self.ayar["panel-secili"], fg=self.ayar["uyari"],
-        )
+        self.yakala_orta = tk.Label(self.yakala, text="")
         self.yakala_orta.pack(side="top")
-        self.yakala_alt = tk.Label(
-            self.yakala, text="", font=yt,
-            bg=self.ayar["panel-secili"], fg=self.ayar["sonuk"],
-        )
+        self.yakala_alt = tk.Label(self.yakala, text="")
         self.yakala_alt.pack(side="top", pady=(8, 0))
+
+    def _renkleri_uygula(self) -> None:
+        """Butun parcalarin renk ve yazitipi, tek yerde."""
+        a = self.ayar
+        yt, buyuk = (a["yazitipi"], a["yazitipi-boy"]), (a["yazitipi"], a["yazitipi-boy"] + 3)
+        cubuk, panel, palet, secili = (a["cubuk-zemin"], a["panel-zemin"], a["palet-zemin"],
+                                       a["panel-secili"])
+        liste = {"fg": a["cubuk-on"], "selectbackground": secili,
+                 "selectforeground": a["vurgu"], "font": yt}
+        for w, secenek in (
+            (self, {"bg": a["zemin"]}),
+            (self.tuval_alani, {"bg": a["zemin"]}),     # tuvaller: _bolmeleri_boya
+            (self.ust_bar, {"bg": cubuk}),
+            (self.ust_cizgi, {"bg": a["palet-cerceve"]}),
+            (self.ust_istem, {"bg": cubuk, "fg": a["vurgu"], "font": yt}),
+            (self.ust_ad, {"bg": cubuk, "fg": a["cubuk-on"], "font": yt}),
+            *((d, {"bg": cubuk, "fg": a["sonuk"], "font": yt}) for d in self.ust_dugmeler.values()),
+            (self.cubuk, {"bg": cubuk}),
+            (self.durum, {"bg": cubuk, "font": yt}),                  # fg durumu_tazele'de
+            (self.sag_durum, {"bg": cubuk, "fg": a["vurgu"], "font": yt}),
+            (self.komut_girdi, {"bg": cubuk, "fg": a["vurgu"], "insertbackground": a["vurgu"],
+                                "font": yt}),
+            (self.panel, {"bg": panel}),
+            (self.liste, {"bg": panel, **liste}),
+            (self.palet, {"bg": palet, "highlightbackground": a["palet-cerceve"]}),
+            (self.palet_ust, {"bg": palet}),
+            (self.palet_onek, {"bg": palet, "fg": a["vurgu"], "font": buyuk}),
+            (self.palet_girdi, {"bg": palet, "fg": a["cubuk-on"], "insertbackground": a["vurgu"],
+                                "font": buyuk}),
+            (self.palet_cizgi_ust, {"bg": a["palet-cerceve"]}),
+            (self.palet_alt, {"bg": cubuk}),
+            (self.palet_alt_sol, {"bg": cubuk, "fg": a["sonuk"], "font": yt}),
+            (self.palet_ipucu, {"bg": cubuk, "fg": a["cubuk-on"], "font": yt}),
+            (self.palet_liste, {"bg": palet, **liste}),
+            (self.alt_menu, {"bg": panel, "highlightbackground": a["palet-cerceve"]}),
+            (self.alt_baslik, {"bg": panel, "fg": a["sonuk"], "font": yt}),
+            (self.alt_liste, {"bg": panel, **liste}),
+            (self.yakala, {"bg": secili, "highlightbackground": a["vurgu"]}),
+            (self.yakala_ust, {"bg": secili, "fg": a["vurgu"], "font": buyuk}),
+            (self.yakala_orta, {"bg": secili, "font": yt}),           # fg yakala_goster'de
+            (self.yakala_alt, {"bg": secili, "fg": a["sonuk"], "font": yt}),
+        ):
+            w.config(**secenek)
+        self._bolmeleri_boya()
+        self._durum_yazili = None          # durum satiri yeni renkle yeniden yazilsin
+
+    def _tuval_baglari(self, bolme: Bolme) -> None:
+        """Bir bolmenin tuvalindeki fare olaylari.
+
+        Imlec bir bolmenin uzerine girdiginde orasi **etkin** olur
+        (`fareyle_bolmeye_gec`), tik de oyle. Ayar kapaliysa ya da gecise
+        uygun an degilse olay yine de dogru bolmede yurur (`orada`): imleci
+        bakilmayan bolmeye goturup tekerlegi cevirmek onu kaydirir, orada bir
+        baglantinin hedefi durum cubugunda gorunur.
+        """
+        t = bolme.tuval
+
+        def gec(islev):                     # tik: o bolme etkin olur
+            def sarmal(olay, b=bolme):
+                self._bolmeye_gec(b)
+                return islev(olay)
+            return sarmal
+
+        def orada(islev):                   # o bolmede yurut (gecis olmasa da)
+            def sarmal(olay, b=bolme):
+                with self._bolmede(b):
+                    return islev(olay)
+            return sarmal
+
+        def fareyle(islev):                 # imlec girdi / gezindi: taban bu bolme
+            def sarmal(olay, b=bolme):
+                self.fareyle_bolmeye_gec(b)
+                with self._bolmede(b):
+                    return islev(olay)
+            return sarmal
+
+        t.bind("<Enter>", fareyle(lambda e: None))
+        t.bind("<MouseWheel>", fareyle(self.tekerlek))
+        t.bind("<Control-MouseWheel>", fareyle(self.ctrl_tekerlek))
+        t.bind("<Button-1>", gec(lambda e: self.tuval.focus_set()))
+        # Tab'i tuval kendi sinif baglantisiyla odak gezmeye cevirir; once biz
+        # yakalayip kesmezsek <Tab> hicbir zaman icindekilere ulasmaz.
+        t.bind("<Tab>", self.tab_geldi)
+        t.bind("<Shift-Tab>", self.tab_geldi)
+        # Sol tus: kalem acik ya da Shift basiliysa metin vurgular, degilse
+        # sayfayi tutup kaydirir (fare_bas karar verir). Sag tik vurguyu siler.
+        t.bind("<B1-Motion>", orada(self.fare_surukle))
+        t.bind("<ButtonPress-1>", gec(self.fare_bas))
+        t.bind("<ButtonRelease-1>", orada(self.fare_birak))
+        # Bos gezinme: taban bu bolme olur + baglantinin ustunde el imleci
+        t.bind("<Motion>", fareyle(self._baglanti_imleci))
+        t.bind("<Leave>", orada(self._baglantidan_cik))
+        t.bind("<Button-3>", gec(self.sag_tik))
 
     def _baglantilari_kur(self) -> None:
         self.bind("<Key>", self.tus_geldi)
         self.bind("<Configure>", self.pencere_degisti)
-        self.tuval.bind("<MouseWheel>", self.tekerlek)
-        self.tuval.bind("<Control-MouseWheel>", self.ctrl_tekerlek)
-        self.tuval.bind("<Button-1>", lambda e: self.tuval.focus_set())
-        # Tab'i tuval kendi sinif baglantisiyla odak gezmeye cevirir; once biz
-        # yakalayip kesmezsek <Tab> hicbir zaman icindekilere ulasmaz.
-        self.tuval.bind("<Tab>", self.tab_geldi)
-        self.tuval.bind("<Shift-Tab>", self.tab_geldi)
-        # Sol tus: kalem acik ya da Shift basiliysa metin vurgular, degilse
-        # sayfayi tutup kaydirir (fare_bas karar verir). Sag tik vurguyu siler.
-        self.tuval.bind("<B1-Motion>", self.fare_surukle)
-        self.tuval.bind("<ButtonPress-1>", self.fare_bas)
-        self.tuval.bind("<ButtonRelease-1>", self.fare_birak)
-        self.tuval.bind("<Button-3>", self.sag_tik)
         self.komut_girdi.bind("<Return>", self.komut_onayla)
         self.komut_girdi.bind("<Escape>", lambda e: self.komut_iptal())
+        self.liste.bind("<Key>", self.panel_tus)
+        self.liste.bind("<Double-Button-1>", lambda e: self.panel_sec())
         # Palette tek odak arama satiridir; gezinme de suzme de oradan surulur.
         self.palet_girdi.bind("<Key>", self.palet_tus)
         self.palet_desen.trace_add("write", lambda *_: self.palet_suz())
@@ -1607,19 +2397,22 @@ class Rubric(tk.Tk):
         self._icindekiler_hatira = None
         self._bekleyen_zoomu_birak()
         self.onbellek.clear()
-        self.tuval_ogeleri.clear()
-        self.tuval.delete("all")
-        self.arama_kimlik += 1          # onceki belgenin taramasi surmesin
-        self.arama_kuyrugu = []
-        self.bulgular, self.bulgu_no = [], -1
-        self._aktif_bulgu = None
+        self._tuvali_temizle()
+        self._aramayi_birak()           # onceki belgenin taramasi surmesin
         self.zipla_gecmis, self.zipla_ileri = [], []
 
         kayit = self.kalici.dosya(yol)
         self.isaretler = {k: tuple(v) for k, v in kayit.get("isaretler", {}).items()
                           if isinstance(v, (list, tuple)) and len(v) == 2}
         self._secim = None
+        self._bekleyen_vurgu = None
         self._kelimeler = {}
+        self._baglantilar = {}
+        self._satir_metinleri = {}
+        self._capa = None
+        self._baglanti_cizili = False
+        self._baglanti_adayi = None
+        self._imlecteki_baglanti = None
         self.vurgu_gecmisi = []
         self._vurgulari_yukle(kayit)
 
@@ -1648,6 +2441,312 @@ class Rubric(tk.Tk):
         else:
             self.bildir(ileti, "vurgu")
 
+    # -- bolmeler (sol / sag) ----------------------------------------------
+    #
+    # Sema:
+    #   <A-Right>  bakilan belgeyi SAG bolmeye at   (bolme yoksa acilir)
+    #   <A-Left>   bakilan belgeyi SOL bolmeye at
+    #   <A-w>      oteki bolmeye gec
+    #   <A-o>      tek bolmeye don (otekinin belgeleri bu listeye katilir)
+    #
+    # Attiktan sonra odak: kaynak bolmede baska belge kaldiysa **atilan
+    # belgeye** gider (attigini gorursun); kaynak bos kaldiysa **bos bolmede**
+    # kalir, boylece `o` ile ikinci belge oraya acilir. Bir belgeyle baslayan
+    # "birini saga, otekini sola" akisi tam boyle yuruyor.
+    #
+    # Kapanis: `q` once o bolmenin kendi listesini tuketir (sagda iki belge
+    # varsa ilk q yalnizca otekine gecer); bolmenin son belgesi de kapaninca
+    # bolme kapanir ve odak oteki bolmeye gecer. Tek bolme kalmissa eskisi
+    # gibi bos ekran olur, cikmak icin Q. <C-e> kapanani bolmesiyle geri acar.
+
+    @property
+    def bolme(self) -> Bolme:
+        return self.bolmeler[self.etkin]
+
+    def _bolmeyi_sifirla(self, bolme: Bolme) -> None:
+        """Bir bolmenin butun belge / gorunum durumu, bos halinde.
+
+        Hem acilistaki ilk bolme hem sonradan acilan ikinci bolme buradan
+        gelir; yoksa ikincisi None dolu dogar.
+        """
+        with self._bolmede(bolme):
+            self.belge = None
+            self.pdf_yolu = ""
+            # Bu bolmenin belge listesi (<C-Left>/<C-Right>). Yalnizca yollar:
+            # bellekte bolme basina tek belge acik, gerisinin kaldigi yer
+            # durum.json'da. Liste oturumda `_oturum.bolmeler` altinda saklanir.
+            self.belgeler = []
+            self.zoom = 1.0
+            self.donme = 0
+            self.sigdir = self.ayar["sigdir"]
+            self.sutunlar = max(1, int(self.ayar["sutunlar"]))
+
+            # duzen
+            self.satirlar = []          # her satir bir sayfa grubu
+            self.yerler = []            # sayfa no -> tuvaldeki yeri (satirlardakiyle ayni dict)
+            self._altlar = []           # satirlarin alt kenari; gorunen satiri bisect bulur
+            self.toplam_yukseklik = 0
+            self.toplam_genislik = 0
+            self._olcu = {}             # sayfa -> donmesiz siniri (pt)
+            # yakinlastirma: olaylar hedefi gunceller, cizim bosta bir kez yapilir
+            self._hedef_zoom = None
+            self._zoom_ekran = (0.0, 0.0)
+            self._zoom_isi = None
+            self._komsu_isi = None
+            self.onbellek = collections.OrderedDict()
+            self.tuval_ogeleri = {}
+            self.aktif_sayfa = 0
+
+            # arama
+            self.bulgular = []
+            self.bulgu_no = -1
+            self.son_desen = ""
+            self.arama_yonu = 1
+            self.arama_kuyrugu = []
+            self.arama_kimlik = 0       # yeni arama eskisini gecersiz kilar
+            self._aktif_bulgu = None
+            self._ilk_atlama = False
+
+            # ziplama listesi / isaretler: konum_imi() ikilileri
+            self.zipla_gecmis = []
+            self.zipla_ileri = []
+            self.isaretler = {}
+
+            # metin vurgulari (highlight)
+            self.vurgular = []          # durum.json'daki kayitlarin kendisi
+            self._vurgu_xref = {}       # vurgu kimligi -> bellekteki not
+            self.vurgu_gecmisi = []     # u ile geri alma
+            self.kalem = False          # vurgu kalemi acik mi (v)
+            self._secim = None          # suren surukleme secimi
+            self._kelimeler = {}        # sayfa -> kelime kutulari
+            # Birakilan secim renk bekler: Enter varsayilan, renk tusu o renk, Esc birakir.
+            self._bekleyen_vurgu = None
+
+            # baglanti gosterimi (<C-l>) ve tiklama
+            self.baglantilar_acik = False
+            self._baglantilar = {}      # sayfa -> [(dikdortgen, kayit)]
+            self._baglanti_cizili = False
+            self._imlecteki_baglanti = None   # el imlecini bir kez degistirmek icin
+            self._baglanti_adayi = None       # basilan baglanti (birakinca acilir)
+            self._basis_noktasi = None        # sol tusun basildigi ekran noktasi
+            self._surukleniyor = False
+            # "su sayfa" diyen baglantinin capasi (bkz. baglanti_capasi)
+            self._satir_metinleri = {}
+            self._capa = None
+            self._capa_isi = None
+
+            self._icindekiler_hatira = None
+
+    def _bolme_yarat(self, sag: bool) -> Bolme:
+        """Yeni bolmeyi istenen yana koyar, durumunu sifirlar, tuvalini kurar.
+        Bakilan bolme yerinde kalir; solda acilinca indisi bir kayar."""
+        yeni = Bolme()
+        if sag:
+            self.bolmeler.append(yeni)
+        else:
+            self.bolmeler.insert(0, yeni)
+            self.etkin += 1
+        self._bolmeyi_sifirla(yeni)
+        self._tuval_kur(yeni)
+        return yeni
+
+    def bolundu(self) -> bool:
+        return len(self.bolmeler) > 1
+
+    @contextlib.contextmanager
+    def _bolmede(self, bolme: Bolme):
+        """Etkin bolmeyi gecici degistirir: bakilmayan bolmeyi cizmek,
+        olcmek, kapatmak icin. Odaga ve boyamaya dokunmaz."""
+        eski = self.etkin
+        try:
+            self.etkin = self.bolmeler.index(bolme)
+        except ValueError:
+            yield
+            return
+        try:
+            yield
+        finally:
+            self.etkin = min(eski, len(self.bolmeler) - 1)
+
+    def _tuval_kur(self, bolme: Bolme) -> None:
+        """Bolmenin cercevesi ve tuvali. Cerceve 1 px: etkin bolme vurgu
+        renginde cerceveli olur (tam sayi piksel, kesirli kenar yok)."""
+        bolme.cerceve = tk.Frame(self.tuval_alani, bd=0, highlightthickness=1)
+        bolme.tuval = tk.Canvas(bolme.cerceve, highlightthickness=0, bd=0, takefocus=True)
+        bolme.tuval.pack(fill="both", expand=True)
+        self._tuval_baglari(bolme)
+
+    def _bolmeleri_yerlestir(self) -> None:
+        for b in self.bolmeler:
+            b.cerceve.pack_forget()
+        self.bolme_cizgi.pack_forget()
+        for i, b in enumerate(self.bolmeler):
+            if i:
+                self.bolme_cizgi.pack(side="left", fill="y")
+            b.cerceve.pack(side="left", fill="both", expand=True)
+        self._bolmeleri_boya()
+        # Tuvallerin yeni genisligi **simdi** olculsun: bundan sonra cagrilan
+        # yenile / duzeni_hesapla `tuval.winfo_width()` okuyor ve Tk geometriyi
+        # bosta hesapladigi icin eski genisligi veriyordu. Bolme kapaninca
+        # kalan tuval tam genislikteydi ama duzen yarim genisliktendi: ekranin
+        # yarisi bos kaliyordu, ancak <C-Right> gibi belgeyi yeniden acan bir
+        # komuttan sonra duzeliyordu.
+        self.update_idletasks()
+
+    def _bolmeleri_boya(self) -> None:
+        a = self.ayar
+        self.bolme_cizgi.config(bg=a["palet-cerceve"])
+        bolundu = self.bolundu()
+        for b in self.bolmeler:
+            kenar = (a["vurgu"] if b is self.bolme else a["palet-cerceve"]) if bolundu \
+                else a["zemin"]
+            # Tek bolmede cerceve hic yok (kalinlik 0): tuval eskisi gibi tam
+            # tepeden basliyor, 1 px kaymiyor. Bolununce 1 px - tam sayi.
+            b.cerceve.config(bg=a["zemin"], highlightthickness=1 if bolundu else 0,
+                             highlightbackground=kenar, highlightcolor=kenar)
+            b.tuval.config(bg=a["zemin"])
+
+    def _bolmeye_gec(self, bolme: Bolme, diske: bool = True) -> None:
+        if bolme is self.bolme or bolme not in self.bolmeler:
+            return
+        if self.mod in ("icindekiler", "vurgular", "belgeler", "yer-imleri"):
+            self.paneli_kapat()                  # panel ayrildigi belgenindi
+        self.konumu_kaydet(diske)
+        self.etkin = self.bolmeler.index(bolme)
+        self._bolmeleri_boya()
+        self.tuval.focus_set()
+        self._durum_yazili = None
+        self.durumu_tazele()
+
+    def fareyle_bolmeye_gec(self, bolme: Bolme) -> None:
+        """Fare bir bolmenin uzerine girince orasi etkin olur (`fare-bolme`).
+
+        Sag belgenin tablosuna gidip `j`'ye basan sagi kaydirsin, tekerlek de
+        sagi cevirsin diye: imlecin durdugu bolme "taban" sayilir.
+
+        Gecmedigi haller - hepsi de gecerse fare kazayla is bozardi:
+        - `fare-bolme false` (ayar kapali);
+        - normal kip disi: panel, palet, komut satiri acikken odak oradadir,
+          fare gezindi diye kapanmamali;
+        - suren surukleme / metin secimi / renk bekleyen vurgu: is bakilan
+          bolmede basladi, ortasinda taban degismemeli;
+        - `g` gibi bekleyen iki tuslu dizi ya da sayi oneki varken.
+        """
+        if bolme is self.bolme or not self.ayar["fare-bolme"]:
+            return
+        if self.mod != "normal" or self.bekleyen or self.sayac:
+            return
+        if self._surukleniyor or self._secim is not None or self._bekleyen_vurgu is not None:
+            return
+        self._bolmeye_gec(bolme, diske=False)
+
+    def _bolme_ac(self, sag: bool) -> Bolme:
+        """Istenen yandaki bolmeyi verir; yoksa acar. Bakilan bolme yerinde
+        kalir, yalnizca yeni bolme yanina girer."""
+        if self.bolundu():
+            return self.bolmeler[1 if sag else 0]
+        yeni = self._bolme_yarat(sag)
+        self._bolmeleri_yerlestir()              # yeni genislikleri de olcer
+        return yeni
+
+    def _bolmeyi_yik(self, bolme: Bolme) -> None:
+        """Bolmeyi kapatir: belgesini kapatir, bekleyen islerini iptal eder,
+        cercevesini yok eder. `etkin` kayan indislere gore duzeltilir."""
+        if bolme not in self.bolmeler or not self.bolundu():
+            return
+        i = self.bolmeler.index(bolme)
+        with self._bolmede(bolme):
+            self._bekleyen_zoomu_birak()
+            for isim in ("_komsu_isi", "_capa_isi"):
+                if getattr(self, isim) is not None:
+                    self.after_cancel(getattr(self, isim))
+                    setattr(self, isim, None)
+            self._aramayi_birak()
+            if self.belge is not None:
+                try:
+                    self.belge.close()
+                except Exception:
+                    pass
+                self.belge = None
+        bolme.cerceve.destroy()
+        del self.bolmeler[i]
+        if self.etkin >= i:
+            self.etkin = max(0, self.etkin - 1)
+        self.etkin = min(self.etkin, len(self.bolmeler) - 1)
+        self._bolmeleri_yerlestir()
+
+    def _yan_adi(self, bolme: Bolme) -> str:
+        return self.m("yan_sag" if self.bolmeler.index(bolme) else "yan_sol")
+
+    def belgeyi_bolmeye(self, sag: bool) -> None:
+        """<A-Right> / <A-Left>: bakilan belgeyi o yandaki bolmeye tasir."""
+        if not self.belge:
+            self.bildir(self.m("bolme_belge_yok"), "uyari")
+            return
+        if self.bolundu() and self.bolmeler[1 if sag else 0] is self.bolme:
+            self.bildir(self.m("bolme_zaten", yan=self.m("yan_sag" if sag else "yan_sol")),
+                        "uyari")
+            return
+        yol, kaynak = self.pdf_yolu, self.bolme
+        self.konumu_kaydet()
+        hedef = self._bolme_ac(sag)              # bolme yoksa acar (kaynak yerinde kalir)
+
+        i = self._sira(yol)                      # kaynak listesinden dusur
+        if i >= 0:
+            del self.belgeler[i]
+        kalan = self.belgeler[min(i, len(self.belgeler) - 1)] if self.belgeler else None
+        if kalan:
+            self.belgeyi_ac(kalan)
+        else:
+            self._belgeyi_birak()
+
+        self.etkin = self.bolmeler.index(hedef)  # hedefe koy
+        self._listeye_ekle(yol)
+        self.belgeyi_ac(yol)
+        if kalan is None:
+            self.etkin = self.bolmeler.index(kaynak)   # bos bolmede kal: `o` orayi doldursun
+        self._bolmeleri_boya()
+        self.tuval.focus_set()
+        self.yenile()
+        self.oturumu_kaydet()
+        self.bildir(self.m("bolmeye_tasindi", ad=os.path.basename(yol),
+                           yan=self.m("yan_sag" if sag else "yan_sol")), "vurgu")
+
+    def bolme_gec(self) -> None:
+        """<A-w>: oteki bolmeye gec."""
+        if not self.bolundu():
+            self.bildir(self.m("bolme_yok"), "uyari")
+            return
+        self._bolmeye_gec(self.bolmeler[1 - self.etkin])
+        self.bildir(self.m("bolmeye_gecildi", yan=self._yan_adi(self.bolme)), "vurgu")
+
+    def bolme_tek(self) -> None:
+        """<A-o>: tek bolmeye don. Otekinin belgeleri kaybolmaz, bu bolmenin
+        listesine katilir (yalnizca gorunum kapanir)."""
+        if not self.bolundu():
+            self.bildir(self.m("bolme_yok"), "uyari")
+            return
+        oteki = self.bolmeler[1 - self.etkin]
+        with self._bolmede(oteki):
+            self.konumu_kaydet()
+            tasinan = list(self.belgeler)
+        self._bolmeyi_yik(oteki)
+        for y in tasinan:
+            self._listeye_ekle(y)
+        self._listeyi_kirp()
+        self._bolmeleri_boya()
+        self.tuval.focus_set()
+        self.yenile()
+        self.oturumu_kaydet()
+        self.bildir(self.m("bolme_kapandi", n=len(tasinan)), "vurgu")
+
+    def _bolmeyi_kapat_ve_gec(self) -> None:
+        """Bolmenin son belgesi de kapandi: bolme kapanir, odak otekine gecer."""
+        self._bolmeyi_yik(self.bolme)
+        self._bolmeleri_boya()
+        self.tuval.focus_set()
+        self.yenile()
+
     # -- belge listesi ve oturum -------------------------------------------
     #
     # zathura'daki gibi bellekte tek belge acik; ondan farkli olarak acilan
@@ -1673,6 +2772,15 @@ class Rubric(tk.Tk):
         if self._sira(yol) < 0:
             self.belgeler.append(yol)
 
+    def _arkadakileri_ekle(self, yollar: list[str]) -> None:
+        """Coklu dosya (komut satiri, dosya penceresi): sonuncusu disindakiler
+        acilmadan listeye girer; sonuncusunu cagiran acar."""
+        for y in yollar[:-1]:
+            y = os.path.abspath(y)
+            if os.path.exists(y):
+                self.kalici.dosya(y)["goruldu"] = time.time()
+                self._listeye_ekle(y)
+
     def _listeyi_kirp(self) -> str | None:
         """Sinir asildiysa en uzun suredir bakilmayani cikarir (bakilan haric)."""
         sinir = max(1, int(self.ayar["son-belgeler"]))
@@ -1686,40 +2794,65 @@ class Rubric(tk.Tk):
         return dusen
 
     def oturumu_kaydet(self) -> None:
-        # kapananlar da yazilir: q'dan hemen sonra Q'ya basan geri acabilsin
-        self.kalici.veri["_oturum"] = {"belgeler": list(self.belgeler),
-                                       "aktif": self.pdf_yolu,
-                                       "kapananlar": list(self.kapananlar)}
+        # kapananlar da yazilir: q'dan hemen sonra Q'ya basan geri acabilsin.
+        # `belgeler` / `aktif` bakilan bolmenindir: eski bicimi okuyan (ve
+        # bolme bilmeyen) bir surum de makul bir oturum bulur.
+        self.kalici.veri["_oturum"] = {
+            "belgeler": list(self.belgeler),
+            "aktif": self.pdf_yolu,
+            "kapananlar": list(self.kapananlar),
+            "bolmeler": [{"belgeler": list(b.belgeler or []), "aktif": b.pdf_yolu or ""}
+                         for b in self.bolmeler],
+            "etkin": self.etkin,
+        }
         self.kalici.yaz()
 
     def oturumu_yukle(self, acilacak: list[str]) -> None:
-        """Acilis: onceki oturumun listesi + komut satirindan gelenler.
+        """Acilis: onceki oturumun bolmeleri + komut satirindan gelenler.
         Komut satirinda dosya verildiyse o, verilmediyse en son bakilan acilir."""
         kayit = self.kalici.veri.get("_oturum") if self.ayar["oturum"] else None
-        eksik, aktif = 0, None
+        eksik, etkin = 0, 0
+        gruplar: list[tuple[list[str], str]] = []
         if isinstance(kayit, dict):
-            eski = [y for y in kayit.get("belgeler", []) if isinstance(y, str)]
-            self.belgeler = [y for y in eski if os.path.exists(y)]
-            eksik = len(eski) - len(self.belgeler)
-            aktif = kayit.get("aktif")
+            ham = kayit.get("bolmeler")
+            if not isinstance(ham, list) or not ham:        # bolme bilmeyen eski kayit
+                ham = [{"belgeler": kayit.get("belgeler", []), "aktif": kayit.get("aktif")}]
+            for g in ham[:2]:
+                if not isinstance(g, dict):
+                    continue
+                eski = [y for y in g.get("belgeler", []) if isinstance(y, str)]
+                var = [y for y in eski if os.path.exists(y)]
+                eksik += len(eski) - len(var)
+                if var:                                     # bos bolme geri getirilmez
+                    gruplar.append((var, g.get("aktif") or ""))
             self.kapananlar = [k for k in kayit.get("kapananlar", [])
                                if isinstance(k, dict) and isinstance(k.get("yol"), str)]
             self._kapananlari_kirp()
+            try:
+                etkin = max(0, min(int(kayit.get("etkin", 0)), len(gruplar) - 1))
+            except (TypeError, ValueError):
+                etkin = 0
+        while len(self.bolmeler) < len(gruplar):            # ikinci bolmeyi geri kur
+            self._bolme_yarat(True)
+        if len(self.bolmeler) > 1:
+            self._bolmeleri_yerlestir()
+
+        # Her bolme kendi listesini ve kaldigi belgeyi geri alir; en son
+        # bakilan bolme etkin kalir.
+        for i, (yollar, aktif) in enumerate(gruplar):
+            self.etkin = i
+            self.belgeler = list(yollar)
+            self.belgeyi_ac(aktif if (aktif and self._sira(aktif) >= 0) else yollar[-1])
+        self.etkin = etkin if gruplar else 0
+
+        # Komut satirindan / dosya penceresinden gelenler etkin bolmeye acilir.
         yeniler = [os.path.abspath(y.strip().strip('"')) for y in acilacak]
-        for y in yeniler[:-1]:                  # coklu dosya: hepsi listeye, sonuncusu acilir
-            if os.path.exists(y):
-                self.kalici.dosya(y)["goruldu"] = time.time()
-                self._listeye_ekle(y)
         if yeniler:
-            hedef = yeniler[-1]
-        elif aktif and self._sira(aktif) >= 0:
-            hedef = aktif
-        else:
-            hedef = self.belgeler[-1] if self.belgeler else None
-        if hedef:
-            self.belgeyi_ac(hedef)
-        else:
+            self._arkadakileri_ekle(yeniler)
+            self.belgeyi_ac(yeniler[-1])
+        elif not self.belge:
             self.bildir(self.m("ipucu_bos"), "vurgu")
+        self._bolmeleri_boya()
         if eksik:
             self.bildir(self.m("oturum_eksik", n=eksik), "uyari")
 
@@ -1751,13 +2884,22 @@ class Rubric(tk.Tk):
             self.konumu_kaydet()
         self._kapanani_hatirla(yol, i, bakilan)
         del self.belgeler[i]
+        bolme_kapandi = False
         if bakilan:
             if self.belgeler:
                 # belgeyi_ac eskisinin konumunu da yazar; listede artik yok, sorun degil
                 self.belgeyi_ac(self.belgeler[min(i, len(self.belgeler) - 1)])
+            elif self.bolundu():
+                # bolmenin son belgesi: bolme kapanir, odak otekine gecer
+                self._bolmeyi_kapat_ve_gec()
+                bolme_kapandi = True
             else:
                 self._belgeyi_birak()
         self.oturumu_kaydet()
+        if bolme_kapandi:
+            self.bildir(self.m("bolme_belgesiz_kapandi", ad=os.path.basename(yol),
+                               tus=self._geri_ac_tusu()), "vurgu")
+            return
         self.bildir(self.m("belge_kapandi" if self.belgeler else "son_belge_kapandi",
                            ad=os.path.basename(yol), tus=self._geri_ac_tusu()), "vurgu")
 
@@ -1775,6 +2917,10 @@ class Rubric(tk.Tk):
         else:                                   # panelden kapatilan: durum.json'daki yeri
             kayit = self.kalici.dosya(yol)
             giris = {"yol": yol, "sira": sira, "konum": kayit.get("konum")}
+        # Hangi bolmedeydi: son belgesi kapaninca bolme de kapaniyor, <C-e>
+        # onu da geri getirsin. Tek bolmede yan yok.
+        if self.bolundu():
+            giris["yan"] = "sag" if self.etkin else "sol"
         self.kapananlar = [k for k in self.kapananlar if not self._ayni_yol(k["yol"], yol)]
         self.kapananlar.append(giris)
         self._kapananlari_kirp()
@@ -1792,9 +2938,8 @@ class Rubric(tk.Tk):
         self.ayar["kapanan-belgeler"] = n
         self._kapananlari_kirp()
         self.oturumu_kaydet()
-        yazildi = self.rc_tus_yaz({}, ayarlar={"kapanan-belgeler": str(n)})
-        self.bildir(self.m("sinir_secildi", n=n) + ("" if yazildi else self.m("rc_yazilamadi_ek")),
-                    "vurgu" if yazildi else "hata")
+        self._kalici_bildir(self.m("sinir_secildi", n=n),
+                            self.rc_tus_yaz({}, ayarlar={"kapanan-belgeler": str(n)}))
 
     def _geri_ac_tusu(self) -> str:
         tuslar = self.komut_tuslari().get("kapanani-ac")
@@ -1810,9 +2955,20 @@ class Rubric(tk.Tk):
             self.oturumu_kaydet()
             self.bildir(self.m("bulunamadi", ne=yol), "hata")
             return
-        if self._sira(yol) >= 0:                # bu arada o ile yeniden acilmis: yalnizca oraya gec
-            self.belgeyi_ac(yol)
-            return
+        for b in self.bolmeler:                 # bu arada o ile yeniden acilmis: oraya gec
+            with self._bolmede(b):
+                acikti = self._sira(yol) >= 0
+            if acikti:
+                self._bolmeye_gec(b)
+                self.belgeyi_ac(yol)
+                return
+        yan = k.get("yan")
+        if yan in ("sol", "sag"):               # kapandigi bolmeye don, bolme kapandiysa geri ac
+            hedef = self._bolme_ac(yan == "sag") if not self.bolundu() \
+                else self.bolmeler[1 if yan == "sag" else 0]
+            self.etkin = self.bolmeler.index(hedef)
+            self._bolmeleri_boya()
+            self.tuval.focus_set()
         self.belgeler.insert(max(0, min(int(k.get("sira", 0)), len(self.belgeler))), yol)
         self.belgeyi_ac(yol)
         if not self._ayni_yol(yol, self.pdf_yolu):     # acilamadi, hatayi belgeyi_ac yazdi
@@ -1824,9 +2980,7 @@ class Rubric(tk.Tk):
             self.zoom = max(self.ayar["en-az-yakinlastirma"],
                             min(self.ayar["en-cok-yakinlastirma"], float(k["zoom"])))
             self.donme = int(k.get("donme", self.donme))
-            self._olcu = {}
-            self.tuval.delete("all")
-            self.tuval_ogeleri.clear()
+            self._tuvali_temizle()
             self.duzeni_hesapla()
         self.konum_imine_git(k.get("konum"))
         self.konumu_kaydet()
@@ -1837,10 +2991,7 @@ class Rubric(tk.Tk):
 
     def _belgeyi_birak(self) -> None:
         """Hic belge kalmadi: bos ekran (uygulamanin dosyasiz acilisi gibi)."""
-        self.arama_kimlik += 1
-        self.arama_kuyrugu = []
-        self.bulgular, self.bulgu_no = [], -1
-        self._aktif_bulgu = None
+        self._aramayi_birak()
         self._bekleyen_zoomu_birak()
         if self.belge is not None:
             try:
@@ -1854,9 +3005,8 @@ class Rubric(tk.Tk):
         self.kalem = False
         self.tuval.config(cursor="")
         self.onbellek.clear()
-        self.tuval_ogeleri.clear()
-        self.tuval.delete("all")
-        self.satirlar = []
+        self._tuvali_temizle()
+        self.satirlar, self.yerler, self._altlar = [], [], []
         self.toplam_yukseklik = 0
         self.aktif_sayfa = 0
         self.tuval.config(scrollregion=(0, 0, 0, 0))
@@ -1864,31 +3014,21 @@ class Rubric(tk.Tk):
 
     def belge_listesi(self) -> None:
         """Acik belgeler paneli (B): zathura'nin :open'daki son dosyalari gibi."""
-        if self.mod == "belgeler":
-            self.paneli_kapat()
+        if self._panel_kapandi("belgeler"):
             return
         if not self.belgeler:
             self.bildir(self.m("belge_listesi_bos"), "uyari")
             return
-        if self.mod in ("icindekiler", "vurgular"):
-            self.paneli_kapat()
         self.konumu_kaydet()                    # bakilanin sayfasi guncel gorunsun
-        self.liste.delete(0, "end")
-        self.panel_konumlari = []
+        self.panel_konumlari = list(self.belgeler)
         en = max(len(os.path.basename(y)) for y in self.belgeler)
+        satirlar = []
         for no, y in enumerate(self.belgeler, 1):
             isaret = ">" if self._ayni_yol(y, self.pdf_yolu) else " "
             sayfa = self.m("satir_sayfa", s=int(self.kalici.dosya(y).get("sayfa", 0)) + 1)
-            self.liste.insert("end", f" {isaret} {no:>2}  {os.path.basename(y):<{en}}"
-                                     f"  {sayfa:>6}   {os.path.dirname(y)}")
-            self.panel_konumlari.append(y)
-        self.mod = "belgeler"
-        self.panel.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.liste.focus_set()
-        self._panel_satiri_sec(max(0, self._sira()))
-        self.liste.bind("<Key>", self.panel_tus)
-        self.liste.bind("<Double-Button-1>", lambda e: self.panel_sec())
-        self.durumu_tazele()
+            satirlar.append(f" {isaret} {no:>2}  {os.path.basename(y):<{en}}"
+                            f"  {sayfa:>6}   {os.path.dirname(y)}")
+        self._paneli_ac("belgeler", satirlar, max(0, self._sira()))
 
     def listeden_belge_kapat(self) -> None:
         secili = self.liste.curselection()
@@ -1904,7 +3044,13 @@ class Rubric(tk.Tk):
         self.belge_listesi()
         self._panel_satiri_sec(min(i, len(self.belgeler) - 1))
 
-    def konumu_kaydet(self) -> None:
+    def konumu_kaydet(self, diske: bool = True) -> None:
+        """`diske=False`: yalnizca bellekteki kaydi tazeler.
+
+        Fare bolmeler arasinda gezerken her gecis kaydediyor; her seferinde
+        durum.json'i yazmak bos yere disk isi olurdu. Dosya zaten kapanista,
+        belge degisiminde ve cikista yaziliyor.
+        """
         if not self.belge or not self.pdf_yolu:
             return
         kayit = self.kalici.dosya(self.pdf_yolu)
@@ -1912,25 +3058,28 @@ class Rubric(tk.Tk):
         kayit["sayfa"] = self.aktif_sayfa
         kayit["donme"] = self.donme
         kayit["isaretler"] = {k: list(v) for k, v in self.isaretler.items()}
-        self.kalici.yaz()
+        if diske:
+            self.kalici.yaz()
 
     # -- duzen -------------------------------------------------------------
 
-    def sayfa_noktasi(self, no: int) -> tuple[float, float]:
-        """Sayfanin nokta (pt) cinsinden, donme uygulanmis olcusu.
+    def _sayfa_siniri(self, no: int) -> pymupdf.Rect:
+        """Sayfanin donmesiz siniri (pt).
 
-        Olcu sayfa basina bir kez okunur: `belge[no]` sayfayi MuPDF'ten
-        yukler ve duzen her yakinlastirmada butun sayfalar icin kurulur
-        (1612 sayfada adim basina ~85 ms buraya gidiyordu).
+        Sayfa basina bir kez okunur: `belge[no]` sayfayi MuPDF'ten yukler ve
+        duzen her yakinlastirmada butun sayfalar icin kurulur (1612 sayfada
+        adim basina ~85 ms buraya gidiyordu); her cizimde her arama bulgusu
+        da buna bakar.
         """
-        olcu = self._olcu.get(no)
-        if olcu is None:
-            r = self.belge[no].rect
-            olcu = self._olcu[no] = (r.width, r.height)
-        w, h = olcu
-        if self.donme % 180:
-            return h, w
-        return w, h
+        r = self._olcu.get(no)
+        if r is None:
+            r = self._olcu[no] = self.belge[no].rect
+        return r
+
+    def sayfa_noktasi(self, no: int) -> tuple[float, float]:
+        """Sayfanin nokta (pt) cinsinden, donme uygulanmis olcusu."""
+        r = self._sayfa_siniri(no)
+        return (r.height, r.width) if self.donme % 180 else (r.width, r.height)
 
     def sigdirmayi_uygula(self) -> None:
         if not self.belge or self.sigdir == "yok":
@@ -1963,13 +3112,25 @@ class Rubric(tk.Tk):
 
         kenar, ara = self.ayar["kenar-bosluk"], self.ayar["sayfa-arasi"]
         tw = max(200, self.tuval.winfo_width())
-        self.satirlar = []
+        n, zoom = self.belge.page_count, self.zoom
+        # Sicak dongu: bolmenin alanlari (zoom, _olcu, sutunlar ...) birer
+        # ozellik, her okuma bir cagri. 1612 sayfalik kitapta duzen kurmak
+        # bunlari yerele almadan ~%20 uzuyordu; sayfa olcusu de burada, iki
+        # ara cagri olmadan okunuyor (bkz. _sayfa_siniri, sayfa_noktasi).
+        belge, olcu = self.belge, self._olcu
+        sutunlar, devrik = self.sutunlar, bool(self.donme % 180)
+        satirlar, yerler = [], []
         y = kenar
+        sayfa_olcusu = _sayfa_olcucusu(belge) if len(olcu) < n else None
 
-        for bas in range(0, self.belge.page_count, self.sutunlar):
-            grup = list(range(bas, min(bas + self.sutunlar, self.belge.page_count)))
-            olcu = [(i, *self.sayfa_noktasi(i)) for i in grup]
-            pikseller = [(i, int(w * self.zoom), int(h * self.zoom)) for i, w, h in olcu]
+        for bas in range(0, n, sutunlar):
+            pikseller = []
+            for no in range(bas, min(bas + sutunlar, n)):
+                r = olcu.get(no)
+                if r is None:
+                    r = olcu[no] = sayfa_olcusu(no)
+                w, h = (r.height, r.width) if devrik else (r.width, r.height)
+                pikseller.append((no, int(w * zoom), int(h * zoom)))
             top_w = sum(p[1] for p in pikseller) + ara * (len(pikseller) - 1)
             satir_h = max(p[2] for p in pikseller)
             x = max(kenar, (tw - top_w) / 2)
@@ -1979,21 +3140,24 @@ class Rubric(tk.Tk):
                 sayfalar.append({"no": no, "x": x, "y": y + (satir_h - h) // 2,
                                  "w": w, "h": h})
                 x += w + ara
-            self.satirlar.append({"y": y, "h": satir_h, "sayfalar": sayfalar,
-                                  "genislik": top_w})
+            satirlar.append({"y": y, "h": satir_h, "sayfalar": sayfalar,
+                             "genislik": top_w})
+            yerler.extend(sayfalar)
             y += satir_h + ara
 
+        self.satirlar, self.yerler = satirlar, yerler
+        self._altlar = [s["y"] + s["h"] for s in satirlar]
         self.toplam_yukseklik = int(y - ara + kenar)
-        en_genis = max([s["genislik"] for s in self.satirlar] or [tw]) + 2 * kenar
+        en_genis = max([s["genislik"] for s in satirlar] or [tw]) + 2 * kenar
         self.toplam_genislik = max(tw, en_genis)
         self.tuval.config(scrollregion=(0, 0, self.toplam_genislik, self.toplam_yukseklik))
 
     def sayfa_yeri(self, no: int) -> dict | None:
-        for satir in self.satirlar:
-            for s in satir["sayfalar"]:
-                if s["no"] == no:
-                    return s
-        return None
+        return self.yerler[no] if 0 <= no < len(self.yerler) else None
+
+    def _satir_indeksi(self, y: float) -> int:
+        """Alt kenari y'ye ulasan ilk satir (satirlar yukaridan asagi sirali)."""
+        return bisect.bisect_left(self._altlar, y)
 
     # -- kaydirma ----------------------------------------------------------
 
@@ -2026,9 +3190,10 @@ class Rubric(tk.Tk):
         listesi ve 'kaldigi yerden ac' hep bunun uzerinden yurur.
         """
         ust = self.ofset()
-        for satir in self.satirlar:
-            if satir["y"] - self.ayar["sayfa-arasi"] <= ust <= satir["y"] + satir["h"]:
-                return satir["sayfalar"][0]["no"], (ust - satir["y"]) / max(1, satir["h"])
+        i = self._satir_indeksi(ust)
+        if i < len(self.satirlar) and self.satirlar[i]["y"] - self.ayar["sayfa-arasi"] <= ust:
+            satir = self.satirlar[i]
+            return satir["sayfalar"][0]["no"], (ust - satir["y"]) / max(1, satir["h"])
         return self.aktif_sayfa, 0.0
 
     def konum_imine_git(self, im, ciz: bool = True) -> None:
@@ -2101,9 +3266,9 @@ class Rubric(tk.Tk):
             pay = self.gorunur_yukseklik() // 2
 
         gorunur: set[int] = set()
-        for satir in self.satirlar:
-            if satir["y"] + satir["h"] < ust - pay or satir["y"] > alt + pay:
-                continue
+        for satir in self.satirlar[self._satir_indeksi(ust - pay):]:
+            if satir["y"] > alt + pay:
+                break
             for s in satir["sayfalar"]:
                 gorunur.add(s["no"])
                 if s["no"] in self.tuval_ogeleri:
@@ -2126,19 +3291,23 @@ class Rubric(tk.Tk):
 
         self.aktif_sayfayi_sapta(ust)
         self.bulgulari_ciz(gorunur)
+        if self.baglantilar_acik or self._baglanti_cizili:
+            self.baglantilari_ciz(gorunur)
+        if self._bekleyen_vurgu:            # yeni islenen sayfanin ustunde kalsin
+            self._bekleyeni_ciz()
+        if self._capa:
+            self._capayi_ciz()
         self.durumu_tazele()
 
+    def _tuvali_temizle(self) -> None:
+        self.tuval.delete("all")
+        self.tuval_ogeleri.clear()
+
     def aktif_sayfayi_sapta(self, ust: float) -> None:
-        orta = ust + self.gorunur_yukseklik() * 0.35
-        for satir in self.satirlar:
-            if satir["y"] <= orta <= satir["y"] + satir["h"]:
-                self.aktif_sayfa = satir["sayfalar"][0]["no"]
-                return
-            if satir["y"] > orta:
-                self.aktif_sayfa = satir["sayfalar"][0]["no"]
-                return
+        """Ekranin ustten %35'indeki satir; o bosluga duserse ondan sonraki."""
         if self.satirlar:
-            self.aktif_sayfa = self.satirlar[-1]["sayfalar"][0]["no"]
+            i = self._satir_indeksi(ust + self.gorunur_yukseklik() * 0.35)
+            self.aktif_sayfa = self.satirlar[min(i, len(self.satirlar) - 1)]["sayfalar"][0]["no"]
 
     # -- arama -------------------------------------------------------------
 
@@ -2152,12 +3321,9 @@ class Rubric(tk.Tk):
         """
         if not self.belge or not desen:
             return
+        self._aramayi_birak()
         self.son_desen = desen
-        self.bulgular = []
-        self.bulgu_no = -1
-        self._aktif_bulgu = None
         self._ilk_atlama = False
-        self.arama_kimlik += 1
 
         n = self.belge.page_count
         bas = self.aktif_sayfa
@@ -2167,6 +3333,12 @@ class Rubric(tk.Tk):
             self.arama_kuyrugu = [(bas + i) % n for i in range(n)]
         self._arama_adimi(self.arama_kimlik)
 
+    def _aramayi_birak(self) -> None:
+        self.arama_kimlik += 1          # suren taramayi da durdurur
+        self.arama_kuyrugu = []
+        self.bulgular, self.bulgu_no = [], -1
+        self._aktif_bulgu = None
+
     # Parti buyudukce tarama hizlanir ama her parti arayuzu o sure kadar bloklar
     # (olcum: ~9 ms/sayfa). 6 sayfa ~55 ms; kaydirma akici kalsin diye bu secildi.
     def _arama_adimi(self, kimlik: int, parti: int = 6) -> None:
@@ -2175,19 +3347,23 @@ class Rubric(tk.Tk):
 
         for no in self.arama_kuyrugu[:parti]:
             try:
-                for r in self.belge[no].search_for(self.son_desen):
-                    self.bulgular.append((no, r))
-                    if self._aktif_bulgu is None:
-                        self._aktif_bulgu = (no, r)
+                bulunan = self.belge[no].search_for(self.son_desen)
             except Exception:
                 continue
+            if not bulunan:
+                continue
+            # Liste hep belge sirasinda dursun ki n/N beklendigi gibi aksin: sayfanin
+            # eslemeleri listedeki yerine eklenir. Her partide butun listeyi
+            # yeniden siralamak 100 bin eslemede taramanin %20'sini yiyordu.
+            yeni = sorted(((no, r) for r in bulunan), key=lambda b: (b[1].y0, b[1].x0))
+            i = bisect.bisect_left(self.bulgular, no, key=lambda b: b[0])
+            self.bulgular[i:i] = yeni
+            if self._aktif_bulgu is None:           # ilk esleme: sayfadaki okuma sirasiyla ilki
+                self._aktif_bulgu = (no, bulunan[0])
+                self.bulgu_no = i + yeni.index(self._aktif_bulgu)
+            elif i <= self.bulgu_no:                # uzerinde durulan esleme kaydi
+                self.bulgu_no += len(yeni)
         del self.arama_kuyrugu[:parti]
-
-        # Liste her zaman belge sirasinda dursun ki n/N beklendigi gibi aksin;
-        # uzerinde durulan esleme nesne olarak izlenir, indeksi yeniden bulunur.
-        self.bulgular.sort(key=lambda b: (b[0], b[1].y0, b[1].x0))
-        if self._aktif_bulgu is not None:
-            self.bulgu_no = self.bulgular.index(self._aktif_bulgu)
 
         if self._aktif_bulgu is not None and not self._ilk_atlama:
             self._ilk_atlama = True
@@ -2235,10 +3411,12 @@ class Rubric(tk.Tk):
             self.ofset_ata(d[1] - self.gorunur_yukseklik() * 0.35)
         self.ciz()
 
-    def aygit_dikdortgeni(self, sayfa: int, r: pymupdf.Rect, yer: dict) -> tuple:
+    def aygit_dikdortgeni(self, sayfa: int, r: pymupdf.Rect, yer: dict,
+                          m: pymupdf.Matrix | None = None) -> tuple:
         """PDF nokta uzayindaki dikdortgeni tuval koordinatina cevirir."""
-        m = self.sayfa_matrisi()
-        sinir = self.belge[sayfa].rect * m
+        if m is None:
+            m = self.sayfa_matrisi()
+        sinir = self._sayfa_siniri(sayfa) * m
         d = r * m
         return (yer["x"] + (d.x0 - sinir.x0), yer["y"] + (d.y0 - sinir.y0),
                 yer["x"] + (d.x1 - sinir.x0), yer["y"] + (d.y1 - sinir.y0))
@@ -2247,26 +3425,322 @@ class Rubric(tk.Tk):
         self.tuval.delete("bulgu")
         if not self.bulgular:
             return
-        aktif = self.bulgular[self.bulgu_no] if 0 <= self.bulgu_no < len(self.bulgular) else None
+        m = self.sayfa_matrisi()                # her bulgu icin yeniden kurulmasin
         for i, (sayfa, r) in enumerate(self.bulgular):
-            if sayfa not in gorunur:
-                continue
-            yer = self.sayfa_yeri(sayfa)
+            yer = self.sayfa_yeri(sayfa) if sayfa in gorunur else None
             if not yer:
                 continue
-            x0, y0, x1, y1 = self.aygit_dikdortgeni(sayfa, r, yer)
-            bu_aktif = aktif is not None and i == self.bulgu_no
-            renk = self.ayar["arama-aktif"] if bu_aktif else self.ayar["arama-zemin"]
+            x0, y0, x1, y1 = self.aygit_dikdortgeni(sayfa, r, yer, m)
+            renk = self.ayar["arama-aktif" if i == self.bulgu_no else "arama-zemin"]
             self.tuval.create_rectangle(
                 x0 - 1, y0 - 1, x1 + 1, y1 + 1, outline=renk, width=1,
                 fill=renk, stipple="gray25", tags=("bulgu",),
             )
 
+    # -- baglantilar (<C-l>, tiklama) --------------------------------------
+    #
+    # "Bu sayfada link var mi?" sorusunun cevabi: <C-l> acikken gorunen
+    # sayfalardaki her baglanti (ic atlama da dis URL de) varsayilan vurgu
+    # renginde (sari fosfor) isaretlenir.
+    #
+    # Gostermekten bagimsiz olarak baglantilar **her zaman tiklanir**: imlec
+    # uzerine gelince el olur ve durum cubugu hedefi yazar; sol tik ic
+    # baglantida (LaTeX'in ref / cite bagi da budur) hedefe ziplar - <C-o>
+    # geri getirir -, dis baglantida adresi sistemin varsayilan tarayicisina
+    # verir. Kalem acikken ya da Shift basiliyken tik metin secer, baglantiya
+    # dokunmaz; sayfayi surukleyen tikta da baglanti acilmaz (bkz. fare_birak).
+
+    def _sayfa_baglanti_kayitlari(self, no: int) -> list[tuple[pymupdf.Rect, dict]]:
+        if no not in self._baglantilar:
+            try:
+                self._baglantilar[no] = [(pymupdf.Rect(b["from"]), b)
+                                         for b in self.belge[no].get_links() if "from" in b]
+            except Exception:
+                self._baglantilar[no] = []
+        return self._baglantilar[no]
+
+    def _sayfa_baglantilari(self, no: int) -> list[pymupdf.Rect]:
+        return [r for r, _ in self._sayfa_baglanti_kayitlari(no)]
+
+    def noktadaki_baglanti(self, x: float, y: float) -> tuple[dict, dict] | None:
+        """Tuval noktasindaki baglanti: (sayfa yeri, baglanti kaydi)."""
+        if not self.belge:
+            return None
+        yer = self._noktadaki_sayfa(x, y)
+        if not yer:
+            return None
+        p = self._sayfa_noktasina(yer, x, y)
+        for r, b in self._sayfa_baglanti_kayitlari(yer["no"]):
+            if r.contains(p):
+                return yer, b
+        return None
+
+    def baglanti_ozeti(self, b: dict) -> str:
+        """Durum cubugunda gorunen hedef: "-> s. 12" ya da adresin kendisi."""
+        tur = b.get("kind")
+        if tur == pymupdf.LINK_GOTO:
+            return self.m("baglanti_hedef_sayfa", n=int(b.get("page", 0)) + 1)
+        if tur == pymupdf.LINK_URI:
+            return str(b.get("uri") or "")
+        if tur in (pymupdf.LINK_GOTOR, pymupdf.LINK_LAUNCH):
+            ad = os.path.basename(str(b.get("file") or ""))
+            sayfa = int(b.get("page", -1))
+            return f"{ad}  {self.m('baglanti_hedef_sayfa', n=sayfa + 1)}" if sayfa >= 0 else ad
+        if tur == pymupdf.LINK_NAMED:
+            return str(b.get("name") or b.get("nameddest") or "")
+        return ""
+
+    def _baglanti_imleci(self, olay) -> None:
+        """Fare gezerken: baglantinin ustunde el imleci + hedefin ozeti."""
+        if self._secim is not None or self._surukleniyor:
+            return
+        bulgu = self.noktadaki_baglanti(*self._tuval_noktasi(olay))
+        kimlik = bulgu[1].get("id") if bulgu else None
+        if kimlik == self._imlecteki_baglanti:
+            return
+        self._imlecteki_baglanti = kimlik
+        self.tuval.config(cursor="hand2" if bulgu else "")
+        if bulgu:
+            self._baglanti_iletisi = self.baglanti_ozeti(bulgu[1]) or self.m("baglanti_bilinmez")
+            self.bildir(self._baglanti_iletisi, "vurgu")
+        elif self.gecici_ileti and self.gecici_ileti == self._baglanti_iletisi:
+            self._baglanti_iletisi = ""
+            self.bildir("")
+
+    def baglantiyi_ac(self, yer: dict, b: dict) -> None:
+        tur = b.get("kind")
+        if tur == pymupdf.LINK_GOTO:
+            self.zipla_kaydet()
+            self.baglanti_hedefine_git(int(b.get("page", 0)), b.get("to"),
+                                       kaynak=(yer["no"], pymupdf.Rect(b["from"])
+                                               if "from" in b else None))
+        elif tur == pymupdf.LINK_URI:
+            self.adresi_ac(str(b.get("uri") or ""))
+        elif tur in (pymupdf.LINK_GOTOR, pymupdf.LINK_LAUNCH):
+            self.baglanti_belgesini_ac(b)
+        elif tur == pymupdf.LINK_NAMED:
+            self.adli_hedefe_git(str(b.get("name") or b.get("nameddest") or ""),
+                                 kaynak=(yer["no"], pymupdf.Rect(b["from"])
+                                         if "from" in b else None))
+        else:
+            self.bildir(self.m("baglanti_bilinmez"), "uyari")
+
+    def baglanti_hedefine_git(self, sayfa: int, hedef=None, kaynak=None) -> None:
+        """Hedef sayfaya gider; `to` varsa o noktayi ekranin ust ucte birine alir.
+
+        `to` yoksa ya da (0,0) ise - yani PDF yalnizca "su sayfa" diyorsa -
+        `kaynak` (tiklanan sayfa, tiklanan dikdortgen) verilmisse hedef sayfada
+        capa aranir; bulunamazsa sayfanin tepesine gidilir.
+        """
+        if not self.belge:
+            return
+        sayfa = max(0, min(self.belge.page_count - 1, sayfa))
+        self.sayfaya_git(sayfa, zipla=False)
+        yer = self.sayfa_yeri(sayfa)
+        if not yer:
+            return
+        y = None
+        if hedef is not None:
+            try:
+                if abs(float(hedef.x)) > 0.01 or abs(float(hedef.y)) > 0.01:
+                    y = float(hedef.y)
+            except Exception:
+                y = None
+        capa = None
+        if y is None and kaynak is not None:
+            capa = self.baglanti_capasi(sayfa, *kaynak)
+            if capa is not None:
+                y = capa.y0
+        if y is None:                       # PDF de biz de bir sey bilmiyoruz: sayfanin tepesi
+            self.ciz()
+            return
+        # `to` sayfanin (PyMuPDF'in ust-sol) nokta uzayinda; hedefin biraz
+        # ustunden basla ki tiklanan baslik ekranin tepesine yapismasin.
+        ust = self.aygit_dikdortgeni(sayfa, pymupdf.Rect(0, y, 1, y + 1), yer)[1]
+        self.ofset_ata(ust - self.gorunur_yukseklik() * 0.2)
+        if capa is not None:
+            self.capayi_isaretle(sayfa, capa)
+        self.ciz()
+
+    def adli_hedefe_git(self, ad: str, kaynak=None) -> None:
+        """Adli hedef (named destination): belgenin kendi tablosundan cozulur."""
+        hedef = None
+        if ad:
+            try:
+                hedef = self.belge.resolve_names().get(ad)
+            except Exception:
+                hedef = None
+        if not hedef:
+            self.bildir(self.m("baglanti_cozulemedi", ne=ad or "?"), "uyari")
+            return
+        self.zipla_kaydet()
+        nokta = hedef.get("to")
+        self.baglanti_hedefine_git(int(hedef.get("page", 0)),
+                                   pymupdf.Point(nokta) if nokta else None, kaynak)
+
+    # -- capa: "su sayfa" diyen baglantinin hedefini metinden bul ----------
+
+    def _metin_satirlari(self, no: int) -> list[tuple[str, pymupdf.Rect]]:
+        """Sayfanin satirlari (tek boslukla sadelestirilmis metin, dikdortgen).
+        Sayfa basina bir kez; tiklama disinda kimse istemez."""
+        if no not in self._satir_metinleri:
+            satirlar = []
+            try:
+                sozluk = self.belge[no].get_text("dict")
+            except Exception:
+                sozluk = {}
+            for blok in sozluk.get("blocks", ()):
+                for satir in blok.get("lines", ()):
+                    metin = " ".join("".join(s.get("text", "")
+                                             for s in satir.get("spans", ())).split())
+                    if metin:
+                        satirlar.append((metin, pymupdf.Rect(satir["bbox"])))
+            self._satir_metinleri[no] = satirlar
+        return self._satir_metinleri[no]
+
+    def baglanti_capasi(self, hedef: int, kaynak_sayfa: int,
+                        kaynak_dik: pymupdf.Rect | None) -> pymupdf.Rect | None:
+        """Tiklanan yazidan cikarilan etiketi hedef sayfada arar.
+
+        Once etiketle **baslayan** satir (altyazi, problem numarasi, kaynakca
+        girdisi hep oyle yazilir), sonra genisletilmis bicimin satir icinde
+        gectigi yer. Ayni sayfaya donen baglantida tiklanan yazinin kendisi
+        elenir, yoksa capa oldugun yer olur.
+        """
+        if kaynak_dik is None:
+            return None
+        try:
+            sayfa = self.belge[kaynak_sayfa]
+            adaylar, ciplak = capa_etiketleri(sayfa.get_textbox(kaynak_dik))
+            if not adaylar and not ciplak:
+                # Dikdortgen yaziyi tam ortmuyor olabilir ("Fig." disarida
+                # kalmis): bir kez de biraz genisinden oku.
+                genis = pymupdf.Rect(kaynak_dik.x0 - 45, kaynak_dik.y0 - 2,
+                                     kaynak_dik.x1 + 15, kaynak_dik.y1 + 2)
+                adaylar, ciplak = capa_etiketleri(sayfa.get_textbox(genis))
+        except Exception:
+            return None
+        if not adaylar and not ciplak:
+            return None
+        ayni = hedef == kaynak_sayfa
+        satirlar = self._metin_satirlari(hedef)
+        for aday in [a.lower() for a in adaylar] + ([ciplak.lower()] if ciplak else []):
+            for metin, r in satirlar:
+                if metin.lower().startswith(aday) and not (ayni and r.intersects(kaynak_dik)):
+                    return r
+        for aday in [a.lower() for a in adaylar]:
+            for metin, r in satirlar:
+                if aday in metin.lower() and not (ayni and r.intersects(kaynak_dik)):
+                    return r
+        return None
+
+    def capayi_isaretle(self, sayfa: int, r: pymupdf.Rect) -> None:
+        """Gidilen yeri bir an isaretler: ayni sayfaya donen baglantida
+        "hicbir sey olmadi" sanilmasin diye."""
+        sure = int(self.ayar["capa-suresi"])
+        if sure <= 0:                       # isaretleme kapali: eskisi de kalmasin
+            self._capayi_birak()
+            return
+        if self._capa_isi is not None:
+            self.after_cancel(self._capa_isi)
+        self._capa = (sayfa, r)
+        self._capa_isi = self.after(sure, self._capayi_birak)
+
+    def _capayi_birak(self) -> None:
+        if self._capa_isi is not None:
+            self.after_cancel(self._capa_isi)
+            self._capa_isi = None
+        self._capa = None
+        self.tuval.delete("capa")
+
+    def _capayi_ciz(self) -> None:
+        self.tuval.delete("capa")
+        if not self._capa:
+            return
+        sayfa, r = self._capa
+        yer = self.sayfa_yeri(sayfa)
+        if not yer:
+            return
+        x0, y0, x1, y1 = self.aygit_dikdortgeni(sayfa, r, yer)
+        self.tuval.create_rectangle(x0 - 2, y0 - 2, x1 + 2, y1 + 2,
+                                    outline=self.ayar["vurgu"], width=2,
+                                    fill=self.ayar["vurgu"], stipple="gray12",
+                                    tags=("capa",))
+
+    def adresi_ac(self, adres: str) -> None:
+        """Dis adresi sisteme verir. Yalnizca bu semalar: bir PDF'in icinden
+        gelen `javascript:` / `file:` / `cmd:` gibi bir adresi acmak tehlikeli."""
+        adres = adres.strip()
+        if not adres:
+            return
+        if not adres.lower().startswith(("http://", "https://", "mailto:", "ftp://", "ftps://")):
+            self.bildir(self.m("baglanti_guvensiz", ne=adres[:80]), "uyari")
+            return
+        try:
+            os.startfile(adres)                     # ShellExecute: varsayilan tarayici
+        except Exception as e:
+            self.bildir(self.m("baglanti_acilamadi", e=e), "hata")
+            return
+        self.bildir(self.m("baglanti_acildi", ne=adres[:80]), "vurgu")
+
+    def baglanti_belgesini_ac(self, b: dict) -> None:
+        """Baska bir dosyaya giden baglanti: PDF ise rubric'te acilir, digeri
+        (LAUNCH) acilmaz - bir belgenin istedigi programi calistirmasi olmaz."""
+        dosya = str(b.get("file") or "").strip()
+        if not dosya:
+            return
+        # Bazi kitaplar web adresini LAUNCH olarak gomuyor (temiz2.pdf'te 14
+        # tane: "www.pearsonglobaleditions.com"). Dosya degil adres: tarayiciya.
+        if re.match(r"^(?:https?://|www\.[\w\-]+\.\w)", dosya, re.I):
+            self.adresi_ac(dosya if "://" in dosya else "http://" + dosya)
+            return
+        if not os.path.isabs(dosya) and self.pdf_yolu:
+            dosya = os.path.join(os.path.dirname(self.pdf_yolu), dosya)
+        if os.path.splitext(dosya)[1].lower() != ".pdf":
+            self.bildir(self.m("baglanti_guvensiz", ne=os.path.basename(dosya)), "uyari")
+            return
+        if not os.path.exists(dosya):
+            self.bildir(self.m("bulunamadi", ne=dosya), "hata")
+            return
+        self.belgeyi_ac(dosya)
+        sayfa = int(b.get("page", -1))
+        if sayfa >= 0:
+            self.baglanti_hedefine_git(sayfa, b.get("to"))
+
+    def baglantilari_ciz(self, gorunur: set[int]) -> None:
+        self.tuval.delete("baglanti")
+        self._baglanti_cizili = False
+        if not self.baglantilar_acik or not self.belge:
+            return
+        renk = self.ayar["vurgu-rengi"]
+        m = self.sayfa_matrisi()
+        for no in gorunur:
+            yer = self.sayfa_yeri(no)
+            if not yer:
+                continue
+            for r in self._sayfa_baglantilari(no):
+                x0, y0, x1, y1 = self.aygit_dikdortgeni(no, r, yer, m)
+                self.tuval.create_rectangle(x0 - 1, y0 - 1, x1 + 1, y1 + 1, outline=renk,
+                                            width=2, fill=renk, stipple="gray25",
+                                            tags=("baglanti",))
+                self._baglanti_cizili = True
+
+    def baglantilari_goster(self) -> None:
+        if not self.belge:
+            return
+        self.baglantilar_acik = not self.baglantilar_acik
+        self.ciz()
+        if not self.baglantilar_acik:
+            self.bildir(self.m("baglanti_kapali"), "vurgu")
+            return
+        n = len(self._sayfa_baglantilari(self.aktif_sayfa))
+        if n:
+            self.bildir(self.m("baglanti_var", n=n), "vurgu")
+        else:
+            self.bildir(self.m("baglanti_yok"), "uyari")
+
     def vurguyu_kapat(self) -> None:
-        self.arama_kimlik += 1          # suren taramayi da durdurur
-        self.arama_kuyrugu = []
-        self.bulgular, self.bulgu_no = [], -1
-        self._aktif_bulgu = None
+        self._aramayi_birak()
         self.tuval.delete("bulgu")
         if self.kalem:                  # Esc kalemi de birakir (vurgulara dokunmaz)
             self.kalem = False
@@ -2307,19 +3781,25 @@ class Rubric(tk.Tk):
             self._notu_sil(v)
             self._notu_ekle(v)
 
+    def vurgu_hex(self, v: dict) -> str:
+        """Vurgunun rengi; renksiz (eski) ya da "sari" olan temanin vurgu-rengi."""
+        return VURGU_RENKLERI.get(v.get("renk", "sari")) or self.ayar["vurgu-rengi"]
+
+    def _not_yaz(self, belge: pymupdf.Document, v: dict):
+        """Vurguyu `belge`ye highlight notu olarak ekler (yazdirma kopyasi da kullanir)."""
+        sayfa = belge[int(v["sayfa"])]
+        not_ = sayfa.add_highlight_annot(quads=[pymupdf.Rect(d).quad for d in v["dikler"]])
+        not_.set_colors(stroke=rgb(self.vurgu_hex(v)))
+        not_.set_info(title="rubric", subject=v["kimlik"], content=v.get("metin", ""))
+        not_.update()
+        return not_
+
     def _notu_ekle(self, v: dict) -> bool:
         """Vurguyu bellekteki belgeye highlight notu olarak isler."""
         if not self.belge.is_pdf:
             return False
         try:
-            sayfa = self.belge[int(v["sayfa"])]
-            dortgenler = [pymupdf.Rect(d).quad for d in v["dikler"]]
-            not_ = sayfa.add_highlight_annot(quads=dortgenler)
-            r = self.ayar["vurgu-rengi"].lstrip("#")
-            not_.set_colors(stroke=[int(r[i:i + 2], 16) / 255 for i in (0, 2, 4)])
-            not_.set_info(title="rubric", subject=v["kimlik"], content=v.get("metin", ""))
-            not_.update()
-            self._vurgu_xref[v["kimlik"]] = not_.xref
+            self._vurgu_xref[v["kimlik"]] = self._not_yaz(self.belge, v).xref
             return True
         except Exception as e:
             self.bildir(self.m("vurgu_islenemedi", s=int(v.get("sayfa", 0)) + 1, e=e), "hata")
@@ -2390,17 +3870,18 @@ class Rubric(tk.Tk):
         return self.tuval.canvasx(olay.x), self.tuval.canvasy(olay.y)
 
     def _noktadaki_sayfa(self, x: float, y: float) -> dict | None:
-        for satir in self.satirlar:
-            if satir["y"] <= y <= satir["y"] + satir["h"]:
-                for s in satir["sayfalar"]:
-                    if s["x"] <= x <= s["x"] + s["w"] and s["y"] <= y <= s["y"] + s["h"]:
-                        return s
+        for satir in self.satirlar[self._satir_indeksi(y):]:
+            if satir["y"] > y:
+                break
+            for s in satir["sayfalar"]:
+                if s["x"] <= x <= s["x"] + s["w"] and s["y"] <= y <= s["y"] + s["h"]:
+                    return s
         return None
 
     def _sayfa_noktasina(self, yer: dict, x: float, y: float) -> pymupdf.Point:
         """Tuval koordinati -> sayfanin nokta uzayi (aygit_dikdortgeni'nin tersi)."""
         m = self.sayfa_matrisi()
-        sinir = self.belge[yer["no"]].rect * m
+        sinir = self._sayfa_siniri(yer["no"]) * m
         return pymupdf.Point(x - yer["x"] + sinir.x0, y - yer["y"] + sinir.y0) * ~m
 
     def _sayfa_kelimeleri(self, no: int) -> list:
@@ -2477,27 +3958,83 @@ class Rubric(tk.Tk):
             return
         yer = self.sayfa_yeri(s["sayfa"]) or s["yer"]
         renk = self.ayar["vurgu-rengi"]
+        m = self.sayfa_matrisi()
         for d in self._secim_dikleri()[0]:
-            x0, y0, x1, y1 = self.aygit_dikdortgeni(s["sayfa"], pymupdf.Rect(d), yer)
+            x0, y0, x1, y1 = self.aygit_dikdortgeni(s["sayfa"], pymupdf.Rect(d), yer, m)
             self.tuval.create_rectangle(x0, y0, x1, y1, outline=renk, fill=renk,
                                         stipple="gray50", tags=("secim",))
 
     def secim_bitir(self, olay=None) -> None:
+        """Birakilan secim hemen boyanmaz, renk bekler (bkz. tus_geldi):
+        Enter varsayilan renk, renk tusu (b: mavi ...) o renk, Esc birakir."""
         s, self._secim = self._secim, None
         self.tuval.delete("secim")
         if not s or not s["oynadi"]:
-            return                                # tik: vurgu yok (kaza olmasin)
+            self._secimi_birak()                  # tik: vurgu yok, bekleyen secim de duser
+            return
         self._secim = s
         dikler, metin = self._secim_dikleri()
         self._secim = None
         if not dikler:
             self.bildir(self.m("secilecek_metin_yok"), "uyari")
             return
-        v = {"kimlik": f"{time.time_ns():x}", "sayfa": s["sayfa"], "dikler": dikler,
-             "metin": metin, "zaman": time.strftime("%Y-%m-%d %H:%M")}
+        self._bekleyen_vurgu = {"sayfa": s["sayfa"], "dikler": dikler, "metin": metin}
+        self._bekleyeni_ciz()
+        tuslar = "  ".join(f"{t}:{self.renk_adi(r)}" for t, r in self.renk_tuslari().items())
+        kisa = metin if len(metin) <= 30 else metin[:27] + "..."
+        self.bildir(self.m("secim_bekliyor", metin=kisa,
+                           varsayilan=self.renk_adi(self.vurgu_varsayilani()),
+                           tuslar=tuslar), "vurgu")
+
+    def _bekleyeni_ciz(self) -> None:
+        """Renk bekleyen secim: vurgu-rengi taramali, cercevesi arayuz vurgusunda
+        (henuz boyanmamis oldugu belli olsun)."""
+        self.tuval.delete("bekleyen")
+        b = self._bekleyen_vurgu
+        yer = self.sayfa_yeri(b["sayfa"]) if b else None
+        if not yer:
+            return
+        m = self.sayfa_matrisi()
+        for d in b["dikler"]:
+            x0, y0, x1, y1 = self.aygit_dikdortgeni(b["sayfa"], pymupdf.Rect(d), yer, m)
+            self.tuval.create_rectangle(x0 - 1, y0 - 1, x1 + 1, y1 + 1, outline=self.ayar["vurgu"],
+                                        fill=self.ayar["vurgu-rengi"], stipple="gray50",
+                                        tags=("bekleyen",))
+
+    def _secimi_birak(self) -> None:
+        self._bekleyen_vurgu = None
+        self.tuval.delete("bekleyen")
+
+    def bekleyeni_vurgula(self, renk: str) -> None:
+        """Renk bekleyen secimi `renk`le vurguya cevirir."""
+        b = self._bekleyen_vurgu
+        self._secimi_birak()
+        if not b:
+            return
+        v = {"kimlik": f"{time.time_ns():x}", "sayfa": b["sayfa"], "dikler": b["dikler"],
+             "metin": b["metin"], "zaman": time.strftime("%Y-%m-%d %H:%M")}
+        if renk != "sari":                        # varsayilan yazilmaz: temayla degissin
+            v["renk"] = renk
         self._vurgu_ekle(v)
-        kisa = metin if len(metin) <= 48 else metin[:45] + "..."
+        kisa = b["metin"] if len(b["metin"]) <= 48 else b["metin"][:45] + "..."
         self.bildir(self.m("vurgulandi", metin=kisa), "vurgu")
+
+    def renk_adi(self, renk: str) -> str:
+        return RENK_ADLARI.get(self.ayar["dil"], RENK_ADLARI["en"]).get(renk, renk)
+
+    def vurgu_varsayilani(self) -> str:
+        """Enter'in koydugu renk (`vurgu-varsayilan`); bozuksa "sari"ya duser."""
+        renk = str(self.ayar.get("vurgu-varsayilan", "sari")).strip().lower()
+        return renk if renk in VURGU_RENKLERI else "sari"
+
+    def renk_tuslari(self) -> dict[str, str]:
+        """`vurgu-tuslari` ayari: tus -> renk ("b:mavi g:yesil"; tus `<C-b>` de olabilir)."""
+        sonuc: dict[str, str] = {}
+        for parca in str(self.ayar["vurgu-tuslari"]).split():
+            tus, _, renk = parca.rpartition(":")
+            if tus and renk in VURGU_RENKLERI:
+                sonuc[tus] = renk
+        return sonuc
 
     def noktadaki_vurgu(self, x: float, y: float) -> dict | None:
         yer = self._noktadaki_sayfa(x, y)
@@ -2521,53 +4058,70 @@ class Rubric(tk.Tk):
 
     def fare_bas(self, olay) -> None:
         self.tuval.focus_set()
+        self._baglanti_adayi = None
         if self.belge and self.belge.is_pdf and (self.kalem or olay.state & 0x1):
             self.secim_basla(olay)
         else:
             self._secim = None
+            # Baglanti basarken degil birakirken acilir: basili tutup sayfayi
+            # kaydirmak da ayni tusla oluyor, kaydirilmissa tik sayilmaz.
+            self._baglanti_adayi = self.noktadaki_baglanti(*self._tuval_noktasi(olay))
+            self._basis_noktasi = (olay.x, olay.y)
+            self._surukleniyor = True
             self.surukle_basla(olay)
 
     def fare_surukle(self, olay) -> None:
         if self._secim is not None:
             self.secim_surukle(olay)
-        else:
-            self.surukle(olay)
+            return
+        if self._baglanti_adayi is not None and self._basis_noktasi and \
+                abs(olay.x - self._basis_noktasi[0]) + abs(olay.y - self._basis_noktasi[1]) > 4:
+            self._baglanti_adayi = None       # kaydirmaya donustu
+        self.surukle(olay)
 
     def fare_birak(self, olay) -> None:
         if self._secim is not None:
             self.secim_bitir(olay)
+            return
+        self._surukleniyor = False
+        aday, self._baglanti_adayi = self._baglanti_adayi, None
+        if aday is None:
+            return
+        simdiki = self.noktadaki_baglanti(*self._tuval_noktasi(olay))
+        if simdiki and simdiki[1].get("id") == aday[1].get("id"):
+            self.baglantiyi_ac(*simdiki)
+
+    def _baglantidan_cik(self, _olay=None) -> None:
+        """Imlec tuvalden cikinca el imleci ve hedef ozeti uzerinde kalmasin."""
+        if self._imlecteki_baglanti is None:
+            return
+        self._imlecteki_baglanti = None
+        self.tuval.config(cursor="")
+        if self.gecici_ileti and self.gecici_ileti == self._baglanti_iletisi:
+            self._baglanti_iletisi = ""
+            self.bildir("")
 
     # -- vurgu: liste ve disa aktarma -------------------------------------
 
     def vurgu_listesi(self) -> None:
-        if not self.belge:
-            return
-        if self.mod == "vurgular":
-            self.paneli_kapat()
+        if not self.belge or self._panel_kapandi("vurgular"):
             return
         if not self.vurgular:
             self.bildir(self.m("belgede_vurgu_yok"), "uyari")
             return
-        if self.mod in ("icindekiler", "belgeler"):
-            self.paneli_kapat()
         sirali = sorted(self.vurgular, key=lambda v: (int(v["sayfa"]), v["dikler"][0][1]))
-        self.liste.delete(0, "end")
-        self.panel_konumlari = []
-        for v in sirali:
-            metin = " ".join(v.get("metin", "").split())
-            self.liste.insert("end", f"  [{int(v['sayfa']) + 1:>4}]  {metin}")
-            self.panel_konumlari.append(v)
-        self.mod = "vurgular"
-        self.panel.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.liste.focus_set()
+        self.panel_konumlari = sirali
         secim = 0
         for i, v in enumerate(sirali):
             if int(v["sayfa"]) <= self.aktif_sayfa:
                 secim = i
-        self._panel_satiri_sec(secim)
-        self.liste.bind("<Key>", self.panel_tus)
-        self.liste.bind("<Double-Button-1>", lambda e: self.panel_sec())
-        self.durumu_tazele()
+        satirlar = [f"  [{int(v['sayfa']) + 1:>4}]  {' '.join(v.get('metin', '').split())}"
+                    for v in sirali]
+        self._paneli_ac("vurgular", satirlar, secim)
+        for i, v in enumerate(sirali):              # renkli vurgu kendi renginde okunsun
+            if v.get("renk") in VURGU_RENKLERI and v["renk"] != "sari" \
+                    and kontrast(self.vurgu_hex(v), self.ayar["panel-zemin"]) >= 3:
+                self.liste.itemconfig(i, foreground=self.vurgu_hex(v))
 
     def _vurguya_git(self, v: dict) -> None:
         yer = self.sayfa_yeri(int(v["sayfa"]))
@@ -2603,32 +4157,17 @@ class Rubric(tk.Tk):
     # -- icindekiler -------------------------------------------------------
 
     def icindekiler(self) -> None:
-        if not self.belge:
+        if not self.belge or self._panel_kapandi("icindekiler"):
             return
-        if self.mod == "icindekiler":
-            self.paneli_kapat()
-            return
-        if self.mod in ("vurgular", "belgeler"):
-            self.paneli_kapat()
         toc = self.belge.get_toc()
         if not toc:
             self.bildir(self.m("icindekiler_yok"), "uyari")
             return
-        self.liste.delete(0, "end")
-        self.icindekiler_verisi = []
-        for derinlik, baslik, sayfa in toc:
-            girinti = "  " * max(0, derinlik - 1)
-            isaret = "+ " if derinlik == 1 else "- "
-            self.liste.insert("end", f"{girinti}{isaret}{baslik}  [{sayfa}]")
-            self.icindekiler_verisi.append(max(0, sayfa - 1))
-
-        self.mod = "icindekiler"
-        self.panel.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.liste.focus_set()
-        self._panel_satiri_sec(self._icindekiler_baslangici())
-        self.liste.bind("<Key>", self.panel_tus)
-        self.liste.bind("<Double-Button-1>", lambda e: self.panel_sec())
-        self.durumu_tazele()
+        self.icindekiler_verisi = [max(0, sayfa - 1) for _, _, sayfa in toc]
+        self._paneli_ac("icindekiler",
+                        [f"{'  ' * max(0, derinlik - 1)}{'+ ' if derinlik == 1 else '- '}"
+                         f"{baslik}  [{sayfa}]" for derinlik, baslik, sayfa in toc],
+                        self._icindekiler_baslangici())
 
     def _icindekiler_baslangici(self) -> int:
         """Panel acilinca secilecek satir.
@@ -2647,6 +4186,23 @@ class Rubric(tk.Tk):
             if en_iyi <= s <= self.aktif_sayfa:     # esitlikte sonraki: en alttaki
                 secim, en_iyi = i, s
         return secim
+
+    def _panel_kapandi(self, mod: str) -> bool:
+        """Panel tuslari ac/kapa: bu panel zaten aciksa kapatir, True doner."""
+        if self.mod == mod:
+            self.paneli_kapat()
+            return True
+        return False
+
+    def _paneli_ac(self, mod: str, satirlar: list[str], secim: int) -> None:
+        """Icindekiler, vurgular ve belgeler ayni listeyi kullanir."""
+        self.liste.delete(0, "end")
+        self.liste.insert("end", *satirlar)
+        self.mod = mod
+        self.panel.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.liste.focus_set()
+        self._panel_satiri_sec(secim)
+        self.durumu_tazele()
 
     def _panel_satiri_sec(self, i: int) -> None:
         """Satiri sec. `activate` da sart: oklar (Tk'nin listbox baglantisi)
@@ -2685,6 +4241,14 @@ class Rubric(tk.Tk):
             self.listeden_belge_kapat()
         elif ad == "B" and self.mod == "belgeler":
             self.paneli_kapat()
+        elif ad in ("x", "<Delete>") and self.mod == "yer-imleri":
+            self.listeden_yer_imi_sil()
+        elif ad == "a" and self.mod == "yer-imleri":
+            self.paneli_kapat()
+            self.yer_imi_koy()
+            self.yer_imi_listesi()
+        elif ad == "b" and self.mod == "yer-imleri":
+            self.paneli_kapat()
         else:
             return None
         return "break"
@@ -2721,6 +4285,11 @@ class Rubric(tk.Tk):
             self.paneli_kapat()
             if not self._ayni_yol(yol, self.pdf_yolu):
                 self.belgeyi_ac(yol)
+        elif self.mod == "yer-imleri":
+            im = self.panel_konumlari[secili[0]]
+            self.paneli_kapat()
+            self.zipla_kaydet()                 # <C-o> geri getirir
+            self.konum_imine_git((im["sayfa"], im["oran"]))
         else:
             hedef = self.icindekiler_verisi[secili[0]]
             self.paneli_kapat()
@@ -2746,24 +4315,24 @@ class Rubric(tk.Tk):
         if self.mod == "palet":
             self.paleti_kapat()
             return
-        if self.mod in ("icindekiler", "vurgular", "belgeler"):
+        if self.mod in ("icindekiler", "vurgular", "belgeler", "yer-imleri"):
             self.paneli_kapat()
         elif self.mod in ("komut", "arama"):
             self.komut_iptal()
 
+        self.palet_desen.set("")        # mod henuz palet degil: izleyici doldurmaz
         self.mod = "palet"
         self.palet_kip = "liste"
         self.palet_hedef = ""
         self.palet_yeni_tus = ""
         self.palet_secim = 0
-        self.palet_desen.set("")        # izleyici palet_suz'u tetikler ama
         self.palet.place(relx=0.5, rely=0.5, anchor="center",
                          relwidth=0.82, relheight=0.76)
         self.palet.lift()
         self.palet_girdi.focus_set()
         self.update_idletasks()         # genisligi olcebilmek icin yerlessin
         self._palet_genisligini_olc()
-        self.palet_doldur()             # asil dolduran bu
+        self.palet_doldur()
         self.durumu_tazele()
 
     def paleti_kapat(self) -> None:
@@ -2803,12 +4372,9 @@ class Rubric(tk.Tk):
         en = self.palet_liste.winfo_width()
         self._palet_en = max(52, (en - 14) // max(6, olcu)) if en > 1 else 96
 
-    def _palet_satiri(self, komut: str, aciklama: str, tuslar: str) -> str:
-        """`komut` ic kimlik; satira secili dildeki adi yazilir. Ad sutunu o
-        dilin en uzun adina gore (Almanca "markierungen-exportieren" 24 harf)."""
+    def _palet_satiri(self, komut: str, aciklama: str, tuslar: str, sutun: int) -> str:
+        """`komut` ic kimlik; satira secili dildeki adi yazilir, `sutun` genisliginde."""
         en = self._palet_en
-        adlar = KOMUT_ADLARI.get(self.ayar["dil"], {})
-        sutun = max([len(a) for a in adlar.values()] + [22]) + 2
         sol = f"  {komut_adi(komut, self.ayar['dil']):<{sutun}}{aciklama}"
         if len(sol) + len(tuslar) + 2 > en:
             sol = sol[:max(0, en - len(tuslar) - 3)] + "~"
@@ -2822,6 +4388,8 @@ class Rubric(tk.Tk):
         desen = katla(self.palet_desen.get().strip())
         harita = self.komut_tuslari()
         dil = self.ayar["dil"]
+        # Ad sutunu o dilin en uzun adina gore (Almanca "markierungen-exportieren" 24 harf)
+        sutun = max([len(a) for a in KOMUT_ADLARI.get(dil, {}).values()] + [22]) + 2
         self.palet_liste.delete(0, "end")
         self.palet_satirlar = []
 
@@ -2844,7 +4412,7 @@ class Rubric(tk.Tk):
                 continue
             self._palet_ekle(f" [ {grup_ad} ]", None, self.ayar["sonuk"])
             for komut, metin, tuslar in uyanlar:
-                self._palet_ekle(self._palet_satiri(komut, metin, tuslar), komut)
+                self._palet_ekle(self._palet_satiri(komut, metin, tuslar, sutun), komut)
 
         if not any(k for k in self.palet_satirlar):
             self._palet_ekle("  " + self.m("eslesme_yok"), None, self.ayar["uyari"])
@@ -2899,14 +4467,8 @@ class Rubric(tk.Tk):
         komut = self.palet_secili()
         if komut is None:
             return
-        if komut == "dil":              # palet kapanmasin: dil listesi yerinde acilir
-            self.dil_menusu()
-            return
-        if komut == "tema":             # dil gibi: secim listesi yerinde acilir
-            self.tema_menusu()
-            return
-        if komut == "geri-acma-siniri":
-            self.sinir_menusu()
+        if komut in ("dil", "tema", "geri-acma-siniri", "yazici", "vurgu-renkleri"):
+            self.komutlar[komut]()      # palet kapanmasin: secim listesi yerinde acilir
             return
         self.paleti_kapat()
         self.calistir(komut)
@@ -2918,10 +4480,10 @@ class Rubric(tk.Tk):
         return "break"      # listbox odagi kapmasin, tuslar girdide kalsin
 
     def palet_ipucunu_tazele(self) -> None:
-        kip = "eylem" if self.palet_kip in SECIM_KIPLERI else self.palet_kip
-        ipucu = self.m(f"ipucu_{kip}") \
-            if kip in ("liste", "eylem", "kaldir", "yakala", "onay") else ""
-        self.palet_ipucu.config(text=ipucu)
+        kip = {"renk-yakala": "yakala", "renk-onay": "onay"}.get(self.palet_kip, self.palet_kip)
+        if kip in SECIM_KIPLERI and kip != "renk":
+            kip = "eylem"
+        self.palet_ipucu.config(text=self.m(f"ipucu_{kip}"))
 
     # -- palet: eylem menusu -----------------------------------------------
 
@@ -2934,9 +4496,7 @@ class Rubric(tk.Tk):
             self.alt_liste.insert("end", f" {sol}{sag.rjust(en - len(sol) - 2)} ")
         self.alt_liste.config(width=en, height=len(satirlar))
         self.alt_ogeleri = ogeler
-        self.alt_secim = 0
-        self.alt_liste.selection_clear(0, "end")
-        self.alt_liste.selection_set(0)
+        self._alt_sec(0)
         self.alt_menu.place(relx=1.0, rely=1.0, x=-12, y=-34, anchor="se")
         self.alt_menu.lift()
         self.palet_ipucunu_tazele()
@@ -2948,20 +4508,20 @@ class Rubric(tk.Tk):
             self.palet_kip = "liste"
         self.palet_ipucunu_tazele()
 
-    def alt_gez(self, yon: int) -> None:
-        if not self.alt_ogeleri:
-            return
-        self.alt_secim = max(0, min(len(self.alt_ogeleri) - 1, self.alt_secim + yon))
+    def _alt_sec(self, i: int) -> None:
+        self.alt_secim = i
         self.alt_liste.selection_clear(0, "end")
-        self.alt_liste.selection_set(self.alt_secim)
-        self.alt_liste.see(self.alt_secim)
+        self.alt_liste.selection_set(i)
+        self.alt_liste.see(i)
+
+    def alt_gez(self, yon: int) -> None:
+        if self.alt_ogeleri:
+            self._alt_sec(max(0, min(len(self.alt_ogeleri) - 1, self.alt_secim + yon)))
 
     def alt_fare(self, olay) -> str:
         i = self.alt_liste.nearest(olay.y)
         if 0 <= i < len(self.alt_ogeleri):
-            self.alt_secim = i
-            self.alt_liste.selection_clear(0, "end")
-            self.alt_liste.selection_set(i)
+            self._alt_sec(i)
         self.palet_girdi.focus_set()
         return "break"
 
@@ -2982,84 +4542,215 @@ class Rubric(tk.Tk):
         self.palet_kip = "eylem"
         self.alt_menu_ac(self.m("eylemler_baslik", komut=self.ad(komut)), satirlar, ogeler)
 
-    def dil_menusu(self) -> None:
-        """Dil secim listesi: [x] English / [ ] Türkçe / [ ] Deutsch.
-
-        Palet kapaliysa (`:lang`, tusa baglanmis `dil`) once acilir. Secim
-        paleti kapatmaz; liste hemen yeni dilde yeniden cizilir.
-        """
+    def _secim_menusu(self, komut: str, kip: str, baslik: str,
+                      secenekler: list[tuple], simdiki) -> None:
+        """[x] / [ ] secim listesi (dil, tema, geri acma siniri). `secenekler`:
+        (deger, etiket, sag yazi). Palet kapaliysa (`:lang`, tusa baglanmis
+        komut) once acilir; secim paleti kapatmaz."""
         if self.mod != "palet":
             self.eylemler()
-        self._palet_komuta_git("dil")
-        simdiki = self.ayar["dil"]
-        satirlar = [(f"[{'x' if kod == simdiki else ' '}] {ad}", kod)
-                    for kod, ad in DILLER.items()]
-        self.palet_kip = "dil"
-        self.alt_menu_ac(self.m("dil_baslik"), satirlar, list(DILLER))
-        if simdiki in DILLER:                   # imlec secili dilde baslasin
-            self.alt_gez(list(DILLER).index(simdiki))
+        self._palet_komuta_git(komut)
+        ogeler = [d for d, _, _ in secenekler]
+        self.palet_kip = kip
+        self.alt_menu_ac(baslik, [(f"[{'x' if d == simdiki else ' '}] {etiket}", sag)
+                                  for d, etiket, sag in secenekler], ogeler)
+        if simdiki in ogeler:                   # imlec secili degerde baslasin
+            self.alt_gez(ogeler.index(simdiki))
+
+    def dil_menusu(self) -> None:
+        """[x] English / [ ] Türkçe / [ ] Deutsch; liste hemen yeni dilde cizilir."""
+        self._secim_menusu("dil", "dil", self.m("dil_baslik"),
+                           [(kod, ad, kod) for kod, ad in DILLER.items()], self.ayar["dil"])
 
     def tema_menusu(self) -> None:
-        """Tema secim listesi, dil_menusu ile ayni duzen. Her satir kendi
-        temasinin vurgu renginde (menu zemininde okunuyorsa)."""
-        if self.mod != "palet":
-            self.eylemler()
-        self._palet_komuta_git("tema")
-        simdiki = self.ayar["tema"]
-        dil = self.ayar["dil"]
-        satirlar = [(f"[{'x' if t == simdiki else ' '}] {komut_adi(f'tema-{t}', dil)}", "")
-                    for t in TEMALAR]
-        self.palet_kip = "tema"
-        self.alt_menu_ac(self.m("tema_baslik"), satirlar, list(TEMALAR))
-        for i, t in enumerate(TEMALAR):
-            renk = TEMALAR[t]["vurgu"]
-            if kontrast(renk, self.ayar["panel-zemin"]) >= 3:
-                self.alt_liste.itemconfig(i, foreground=renk)
-        if simdiki in TEMALAR:                  # imlec secili temada baslasin
-            self.alt_gez(list(TEMALAR).index(simdiki))
+        """Her satir kendi temasinin vurgu renginde (menu zemininde okunuyorsa)."""
+        self._secim_menusu("tema", "tema", self.m("tema_baslik"),
+                           [(t, komut_adi(f"tema-{t}", self.ayar["dil"]), "") for t in TEMALAR],
+                           self.ayar["tema"])
+        for i, tema in enumerate(TEMALAR.values()):
+            if kontrast(tema["vurgu"], self.ayar["panel-zemin"]) >= 3:
+                self.alt_liste.itemconfig(i, foreground=tema["vurgu"])
 
     def sinir_menusu(self) -> None:
-        """Geri acma siniri: [x] 1 belge ... [ ] 10 belge, dil/tema gibi."""
+        """Geri acma siniri: [x] 1 belge ... [ ] 10 belge."""
+        varsayilan = VARSAYILAN_AYAR["kapanan-belgeler"]
+        self._secim_menusu("geri-acma-siniri", "sinir", self.m("sinir_baslik"),
+                           [(n, f"{' ' if n < 10 else ''}{self.m('sinir_satir', n=n)}",
+                             self.m("sinir_varsayilan") if n == varsayilan else "")
+                            for n in range(1, KAPANAN_EN_COK + 1)],
+                           self._kapanan_siniri())
+
+    def yazici_menusu(self) -> None:
+        """Kurulu yazicilar; ilk satir Windows'un varsayilanina birakir."""
+        yazicilar = _yazicilar()
+        varsayilan = _varsayilan_yazici()
+        secenekler = [("", self.m("yazici_sistem"), varsayilan or self.m("yok"))]
+        secenekler += [(y, y, self.m("sinir_varsayilan") if y == varsayilan else "")
+                       for y in yazicilar]
+        self._secim_menusu("yazici", "yazici", self.m("yazici_baslik"), secenekler,
+                           str(self.ayar["yazdirma-yazicisi"]))
+
+    def yaziciyi_ayarla(self, ad: str) -> None:
+        """Ctrl-K > ayarlar > yazici. rubricrc'ye `set yazdirma-yazicisi` yazilir."""
+        self.ayar["yazdirma-yazicisi"] = ad
+        self.alt_menuyu_kapat()
+        yazildi = self.rc_tus_yaz({}, ayarlar={"yazdirma-yazicisi": ad})
+        self._kalici_bildir(self.m("yazici_secildi",
+                                   ad=ad or _varsayilan_yazici() or self.m("yok")), yazildi)
+
+    # -- palet: vurgu renkleri ---------------------------------------------
+    #
+    # Temalar gibi tek satir; Enter bos bir liste acar: yalnizca renkler ve
+    # tuslari, her satir kendi renginde. Bir rengin uzerinde Enter o rengin
+    # tusunu sorar (tus atamayla ayni ekran), onay `set vurgu-tuslari` olarak
+    # rubricrc'ye yazilir. Tuslar yalnizca secim renk beklerken gecerli
+    # (bkz. tus_geldi), bu yuzden normal tuslarla catismazlar.
+
+    def vurgu_renk_menusu(self, secili: str | None = None) -> None:
         if self.mod != "palet":
             self.eylemler()
-        self._palet_komuta_git("geri-acma-siniri")
-        simdiki = self._kapanan_siniri()
-        varsayilan = VARSAYILAN_AYAR["kapanan-belgeler"]
-        satirlar = [(f"[{'x' if n == simdiki else ' '}] {' ' if n < 10 else ''}"
-                     f"{self.m('sinir_satir', n=n)}",
-                     self.m("sinir_varsayilan") if n == varsayilan else "")
-                    for n in range(1, KAPANAN_EN_COK + 1)]
-        self.palet_kip = "sinir"
-        self.alt_menu_ac(self.m("sinir_baslik"), satirlar, list(range(1, KAPANAN_EN_COK + 1)))
-        self.alt_gez(simdiki - 1)               # imlec secili degerde baslasin
+        self._palet_komuta_git("vurgu-renkleri")
+        tuslar: dict[str, list[str]] = {}
+        for tus, renk in self.renk_tuslari().items():
+            tuslar.setdefault(renk, []).append(tus)
+        ogeler = list(VURGU_RENKLERI)
+        varsayilan = self.vurgu_varsayilani()
+        satirlar = []
+        for renk in ogeler:
+            sag = "  ".join(tuslar.get(renk, []))
+            ad = self.renk_adi(renk)
+            if renk == "sari":
+                ad += f"  ({self.m('renk_tema')})"
+            if renk == varsayilan:
+                ad += f"  ({self.m('sinir_varsayilan')})"
+                sag = f"{sag}  enter".strip()
+            satirlar.append((ad, sag or "-"))
+        self.palet_kip = "renk"
+        self.alt_menu_ac(self.m("renk_baslik"), satirlar, ogeler)
+        for i, renk in enumerate(ogeler):
+            renk_hex = VURGU_RENKLERI[renk] or self.ayar["vurgu-rengi"]
+            if kontrast(renk_hex, self.ayar["panel-zemin"]) >= 3:
+                self.alt_liste.itemconfig(i, foreground=renk_hex)
+        if secili in ogeler:
+            self.alt_gez(ogeler.index(secili))
+
+    def vurgu_varsayilanini_ata(self, renk: str) -> None:
+        """Ctrl-K > vurgu renkleri > bosluk: Enter'in koydugu rengi degistirir."""
+        if renk not in VURGU_RENKLERI:
+            return
+        self.ayar["vurgu-varsayilan"] = renk
+        yazildi = self.rc_tus_yaz({}, ayarlar={"vurgu-varsayilan": renk})
+        self.vurgu_renk_menusu(renk)            # liste isareti yeni renge gecsin
+        self._kalici_bildir(self.m("renk_varsayilan_atandi", renk=self.renk_adi(renk)),
+                            yazildi)
+
+    def renk_tusu_sor(self, renk: str) -> None:
+        self.alt_menu.place_forget()
+        self.alt_ogeleri = []
+        self.palet_hedef = renk
+        self.palet_yeni_tus = ""
+        self.palet_kip = "renk-yakala"
+        self.renk_yakala_goster()
+
+    @staticmethod
+    def _renk_tusu_olmaz(tus: str) -> bool:
+        """Enter varsayilan rengi koyar, Esc secimi birakir; `#` rubricrc'de
+        bosluktan sonra gelince yorum sayilir (set vurgu-tuslari ... #:mavi)."""
+        return tus in ("<Return>", "<Esc>") or tus.startswith("#") or not tus.strip()
+
+    def renk_uyarisi(self, tus: str) -> str:
+        if self._renk_tusu_olmaz(tus):
+            return self.m("renk_tusu_olmaz", tus=tus)
+        sahip = self.renk_tuslari().get(tus)
+        if sahip == self.palet_hedef:
+            return self.m("renk_zaten", tus=tus, renk=self.renk_adi(sahip))
+        if sahip:
+            return self.m("renk_catisma", tus=tus, renk=self.renk_adi(sahip))
+        return ""
+
+    def renk_yakala_goster(self) -> None:
+        renk = self.palet_hedef
+        renk_hex = VURGU_RENKLERI.get(renk) or self.ayar["vurgu-rengi"]
+        ust_rengi = renk_hex if kontrast(renk_hex, self.ayar["panel-secili"]) >= 3 \
+            else self.ayar["vurgu"]
+        simdiki = "  ".join(t for t, r in self.renk_tuslari().items() if r == renk) \
+            or self.m("yok")
+        if self.palet_kip == "renk-yakala":
+            self.yakala_ust.config(text=f"{self.renk_adi(renk)}  <-  ___", fg=ust_rengi)
+            self.yakala_orta.config(text=self.m("simdiki_tuslar", tuslar=simdiki),
+                                    fg=self.ayar["sonuk"])
+            self.yakala_alt.config(text=self.m("yakala_bekle"))
+        else:
+            self.yakala_ust.config(text=f"{self.renk_adi(renk)}  <-  {self.palet_yeni_tus}",
+                                   fg=ust_rengi)
+            self.yakala_orta.config(text=self.renk_uyarisi(self.palet_yeni_tus),
+                                    fg=self.ayar["uyari"])
+            self.yakala_alt.config(text=self.m("yakala_onay"))
+        self.yakala.place(relx=0.5, rely=0.5, anchor="center")
+        self.yakala.lift()
+        self.palet_ipucunu_tazele()
+
+    def renk_yakala_tus(self, ad: str) -> str:
+        if not ad:
+            return "break"
+        if ad == "<Esc>":
+            self._renk_yakalamayi_bitir()
+            self.bildir(self.m("atama_iptal"), "uyari")
+            return "break"
+        if self.palet_kip == "renk-onay" and ad == "<Return>":
+            self.renk_tusunu_uygula()
+            return "break"
+        self.palet_yeni_tus = ad
+        self.palet_kip = "renk-onay"
+        self.renk_yakala_goster()
+        return "break"
+
+    def _renk_yakalamayi_bitir(self) -> None:
+        renk = self.palet_hedef
+        self.yakala.place_forget()
+        self.palet_kip = "liste"
+        self.palet_yeni_tus = ""
+        self.palet_girdi.focus_set()
+        self.vurgu_renk_menusu(renk)            # liste, imlec ayni renkte, geri gelir
+
+    def renk_tusunu_uygula(self) -> None:
+        tus, renk = self.palet_yeni_tus, self.palet_hedef
+        if not tus or renk not in VURGU_RENKLERI:
+            self._renk_yakalamayi_bitir()
+            return
+        if self._renk_tusu_olmaz(tus):
+            self.bildir(self.renk_uyarisi(tus), "uyari")
+            return                              # onay ekraninda kal, baska tusa basilabilir
+        eski = self.renk_tuslari()
+        onceki = eski.get(tus)
+        # bir rengin tek tusu olur; alinan tus eski renginden duser
+        yeni = {t: r for t, r in eski.items() if r != renk and t != tus}
+        yeni[tus] = renk
+        sira = list(VURGU_RENKLERI)
+        deger = " ".join(f"{t}:{r}" for t, r in sorted(yeni.items(),
+                                                       key=lambda tr: sira.index(tr[1])))
+        self.ayar["vurgu-tuslari"] = deger
+        yazildi = self.rc_tus_yaz({}, ayarlar={"vurgu-tuslari": deger})
+        self._renk_yakalamayi_bitir()
+        alinan = self.m("alindi_ek", onceki=self.renk_adi(onceki)) \
+            if onceki and onceki != renk else ""
+        self._kalici_bildir(self.m("renk_atandi", renk=self.renk_adi(renk), tus=tus) + alinan,
+                            yazildi)
 
     def alt_onayla(self) -> None:
         if not (0 <= self.alt_secim < len(self.alt_ogeleri)):
             return
-        secim = self.alt_ogeleri[self.alt_secim]
-        if self.palet_kip == "kaldir":
+        secim, kip = self.alt_ogeleri[self.alt_secim], self.palet_kip
+        if kip == "kaldir":
             self.tusu_kaldir_uygula(secim)
-            return
-        if self.palet_kip == "dil":
+        elif kip in SECIM_KIPLERI:
             self.alt_menuyu_kapat()
-            self.dili_ayarla(secim)
-            return
-        if self.palet_kip == "tema":
-            self.alt_menuyu_kapat()
-            self.tema_uygula(secim)
-            return
-        if self.palet_kip == "sinir":
-            self.alt_menuyu_kapat()
-            self.kapanan_siniri_ayarla(secim)
-            return
-        if secim == "calistir":
-            self.palet_calistir()
-        elif secim == "tus-ata":
-            self.tus_ata()
-        elif secim == "tus-kaldir":
-            self.tusu_kaldir()
-        elif secim == "varsayilan":
-            self.varsayilana_don()
+            {"dil": self.dili_ayarla, "tema": self.tema_uygula,
+             "sinir": self.kapanan_siniri_ayarla, "renk": self.renk_tusu_sor,
+             "yazici": self.yaziciyi_ayarla}[kip](secim)
+        else:
+            {"calistir": self.palet_calistir, "tus-ata": self.tus_ata,
+             "tus-kaldir": self.tusu_kaldir, "varsayilan": self.varsayilana_don}[secim]()
 
     # -- palet: tus atama --------------------------------------------------
 
@@ -3073,6 +4764,7 @@ class Rubric(tk.Tk):
     def yakala_goster(self) -> None:
         komut = self.palet_hedef
         simdiki = "  ".join(self.komut_tuslari().get(komut, [])) or self.m("yok")
+        self.yakala_ust.config(fg=self.ayar["vurgu"])     # renk yakalama boyamis olabilir
         if self.palet_kip == "yakala":
             self.yakala_ust.config(text=f"{self.ad(komut)}  <-  ___")
             self.yakala_orta.config(text=self.m("simdiki_tuslar", tuslar=simdiki),
@@ -3154,8 +4846,7 @@ class Rubric(tk.Tk):
         self._palet_komuta_git(komut)
         alinan = self.m("alindi_ek", onceki=self.ad(onceki)) \
             if onceki and onceki != komut else ""
-        self.bildir(f"map {tus} {komut}{alinan}{'' if yazildi else self.m('rc_yazilamadi_ek')}",
-                    "vurgu" if yazildi else "hata")
+        self._kalici_bildir(f"map {tus} {komut}{alinan}", yazildi)
 
     def tusu_kaldir(self) -> None:
         tuslar = self.komut_tuslari().get(self.palet_hedef, [])
@@ -3179,8 +4870,7 @@ class Rubric(tk.Tk):
         self.alt_menuyu_kapat()
         self.palet_doldur()
         self._palet_komuta_git(self.palet_hedef)
-        self.bildir(f"unmap {tus}{'' if yazildi else self.m('rc_yazilamadi_ek')}",
-                    "vurgu" if yazildi else "hata")
+        self._kalici_bildir(f"unmap {tus}", yazildi)
 
     def varsayilana_don(self) -> None:
         komut = self.palet_hedef
@@ -3202,9 +4892,7 @@ class Rubric(tk.Tk):
         self.palet_doldur()
         self._palet_komuta_git(komut)
         geri = "  ".join(varsayilan) or self.m("tus_yok")
-        self.bildir(self.m("varsayilana_dondu", komut=self.ad(komut), tuslar=geri)
-                    + ("" if yazildi else self.m("rc_yazilamadi_ek")),
-                    "vurgu" if yazildi else "hata")
+        self._kalici_bildir(self.m("varsayilana_dondu", komut=self.ad(komut), tuslar=geri), yazildi)
 
     # -- palet: rubricrc'ye yazma --------------------------------------------
 
@@ -3293,6 +4981,8 @@ class Rubric(tk.Tk):
 
         if kip in ("yakala", "onay"):
             return self.yakala_tus(ad)
+        if kip in ("renk-yakala", "renk-onay"):
+            return self.renk_yakala_tus(ad)
 
         alt_menude = kip in ("eylem", "kaldir", *SECIM_KIPLERI)
 
@@ -3304,6 +4994,10 @@ class Rubric(tk.Tk):
             return "break"
         if ad == "<Return>":
             self.alt_onayla() if alt_menude else self.palet_calistir()
+            return "break"
+        if ad == "<Space>" and kip == "renk":
+            if 0 <= self.alt_secim < len(self.alt_ogeleri):
+                self.vurgu_varsayilanini_ata(self.alt_ogeleri[self.alt_secim])
             return "break"
 
         adim = {"<Down>": 1, "<C-n>": 1, "<Up>": -1, "<C-p>": -1,
@@ -3385,8 +5079,7 @@ class Rubric(tk.Tk):
                 self.bildir(f"set {p[0]} = {self.ayar.get(p[0])}", "vurgu")
         elif ad in ("theme", "tema", "thema"):
             if arg:
-                kimlik = komut_kimligi(arg)
-                self.tema_uygula(kimlik[5:] if kimlik.startswith("tema-") else katla(arg))
+                self.tema_uygula(tema_kimligi(arg))
             else:                        # tek basina: secim listesi
                 self.tema_menusu()
         elif ad == "lang":
@@ -3418,14 +5111,13 @@ class Rubric(tk.Tk):
         elif ad == "nohlsearch":
             self.vurguyu_kapat()
         elif ad == "bmark":
-            self.yer_imi_koy(arg or f"s{self.aktif_sayfa + 1}")
+            self.yer_imi_koy(arg or None)
         elif ad == "blist":
-            self.yer_imlerini_goster()
+            self.yer_imi_listesi()
         elif ad == "bdelete":
-            imler = self.kalici.dosya(self.pdf_yolu).get("yer-imleri", {})
-            if imler.pop(arg, None) is not None:
-                self.kalici.yaz()
-                self.bildir(self.m("silindi", ad=arg), "vurgu")
+            if self.belge:
+                for im in [im for im in self._yer_imleri() if im["ad"] == arg]:
+                    self.yer_imi_sil(im)
         elif ad == "export":
             self.disa_aktar(arg)
         elif ad == "info":
@@ -3437,7 +5129,7 @@ class Rubric(tk.Tk):
         elif ad == "rc":
             self.bildir(self.yapi.yol, "vurgu")
         elif ad == "help":
-            self.yardim()
+            self.bildir(self.m("yardim"), "vurgu")
         else:
             # cikplak ic komut adi da kabul: ":sonraki-sayfa"
             # her dildeki ad da olur: ":next-page", ":sonraki-sayfa", ":aşağı"
@@ -3450,16 +5142,16 @@ class Rubric(tk.Tk):
 
     def _komut_tablosu(self) -> dict:
         return {
-            "asagi":        lambda: self.kaydir(self.ayar["kaydirma-adimi"] * self.sayi(1)),
-            "yukari":       lambda: self.kaydir(-self.ayar["kaydirma-adimi"] * self.sayi(1)),
-            "sola":         lambda: self.yatay_kaydir(-self.sayi(1)),
-            "saga":         lambda: self.yatay_kaydir(self.sayi(1)),
+            "asagi":        lambda: self.kaydir(self.ayar["kaydirma-adimi"] * self.sayi()),
+            "yukari":       lambda: self.kaydir(-self.ayar["kaydirma-adimi"] * self.sayi()),
+            "sola":         lambda: self.yatay_kaydir(-self.sayi()),
+            "saga":         lambda: self.yatay_kaydir(self.sayi()),
             "yarim-asagi":  lambda: self.kaydir(self.gorunur_yukseklik() / 2),
             "yarim-yukari": lambda: self.kaydir(-self.gorunur_yukseklik() / 2),
             "sayfa-ileri":  lambda: self.kaydir(self.gorunur_yukseklik() * 0.92),
             "sayfa-geri":   lambda: self.kaydir(-self.gorunur_yukseklik() * 0.92),
-            "sonraki-sayfa": lambda: self.sayfaya_git(self.aktif_sayfa + self.sayi(1), zipla=False),
-            "onceki-sayfa": lambda: self.sayfaya_git(self.aktif_sayfa - self.sayi(1), zipla=False),
+            "sonraki-sayfa": lambda: self.sayfaya_git(self.aktif_sayfa + self.sayi(), zipla=False),
+            "onceki-sayfa": lambda: self.sayfaya_git(self.aktif_sayfa - self.sayi(), zipla=False),
             "ilk-sayfa":    lambda: self.sayfaya_git(0),
             "son-sayfa":    self.son_sayfa,
             "yakinlastir":  lambda: self.yakinlastir(1),
@@ -3496,30 +5188,39 @@ class Rubric(tk.Tk):
             "onceki-belge": lambda: self.belge_gez(-1),
             "belgeyi-kapat": self.belgeyi_kapat,
             "kapanani-ac":  self.kapanani_ac,
+            "bolme-saga":   lambda: self.belgeyi_bolmeye(True),
+            "bolme-sola":   lambda: self.belgeyi_bolmeye(False),
+            "bolme-gec":    self.bolme_gec,
+            "bolme-tek":    self.bolme_tek,
             "geri-acma-siniri": self.sinir_menusu,
+            "yazici":       self.yazici_menusu,
+            "tepsi":        self.tepsi_degistir,
             "belgeler":     self.belge_listesi,
             "tema":         self.tema_menusu,
             **{f"tema-{t}": (lambda t=t: self.tema_uygula(t)) for t in TEMALAR},
+            "vurgu-renkleri": self.vurgu_renk_menusu,
+            "yer-imi-koy":  self.yer_imi_koy,
+            "yer-imleri":   self.yer_imi_listesi,
+            "yazdir":       self.yazdir,
+            "yazdir-sec":   self.yazdir_sec,
+            "baglantilar":  self.baglantilari_goster,
             "isaret-koy":   lambda: self.bekle("isaret-koy"),
             "isarete-git":  lambda: self.bekle("isarete-git"),
         }
 
-    def sayi(self, varsayilan: int = 1) -> int:
-        """Bekleyen sayi onekini tuketir (5j, 42G gibi)."""
-        if self.sayac:
-            try:
-                d = int(self.sayac)
-            except ValueError:
-                d = varsayilan
-            self.sayac = ""
-            return max(1, d)
-        return varsayilan
+    def sayi(self) -> int:
+        """Bekleyen sayi onekini tuketir (5j, 42G gibi); onek yoksa 1."""
+        sayac, self.sayac = self.sayac, ""
+        try:
+            return max(1, int(sayac))
+        except ValueError:          # bos, ya da int()'in okumadigi bir rakam (²)
+            return 1
 
     def son_sayfa(self) -> None:
         if not self.belge:
             return
         if self.sayac:                      # 42G -> 42. sayfa
-            self.sayfaya_git(self.sayi(1) - 1)
+            self.sayfaya_git(self.sayi() - 1)
         else:
             self.sayfaya_git(self.belge.page_count - 1)
 
@@ -3538,7 +5239,7 @@ class Rubric(tk.Tk):
         """
         if not self.belge:
             return
-        adim = self.ayar["yakinlastirma-adimi"] ** (oran * self.sayi(1))
+        adim = self.ayar["yakinlastirma-adimi"] ** (oran * self.sayi())
         hedef = (self._hedef_zoom or self.zoom) * (adim if yon > 0 else 1 / adim)
         self._hedef_zoom = max(self.ayar["en-az-yakinlastirma"],
                                min(self.ayar["en-cok-yakinlastirma"], hedef))
@@ -3556,8 +5257,7 @@ class Rubric(tk.Tk):
         sx, sy = self._zoom_ekran
         capa = self._capa_al(sx, sy)            # eski duzende, imlecin altindaki yer
         self.zoom = hedef
-        self.tuval.delete("all")
-        self.tuval_ogeleri.clear()
+        self._tuvali_temizle()
         self.duzeni_hesapla()
         self._capaya_don(capa, sx, sy)
         # Once yalnizca gorunen sayfalar; komsular zoom durulunca islenir.
@@ -3668,10 +5368,8 @@ class Rubric(tk.Tk):
         acik = not self.ayar["baslik-cubugu"]
         self.ayar["baslik-cubugu"] = acik
         self._ust_bari_yerlestir()
-        yazildi = self.rc_tus_yaz({}, ayarlar={"baslik-cubugu": "true" if acik else "false"})
-        self.bildir(self.m("ust_bar_durum", durum=self.m("acik" if acik else "kapali"))
-                    + ("" if yazildi else self.m("rc_yazilamadi_ek")),
-                    "vurgu" if yazildi else "hata")
+        self._kalici_bildir(self.m("ust_bar_durum", durum=self.m("acik" if acik else "kapali")),
+                            self.rc_tus_yaz({}, ayarlar={"baslik-cubugu": "true" if acik else "false"}))
 
     def cerceveyi_uygula(self) -> None:
         if sys.platform != "win32" or self.attributes("-fullscreen"):
@@ -3721,19 +5419,11 @@ class Rubric(tk.Tk):
     def _ust_bari_yerlestir(self) -> None:
         gorunsun = self.ayar["baslik-cubugu"] and not self.attributes("-fullscreen")
         if gorunsun and not self.ust_bar.winfo_ismapped():
-            self.ust_bar.pack(side="top", fill="x", before=self.tuval)
+            # before= kardes isteyor: tuval artik bolmenin cercevesinin icinde,
+            # pencerede onun yerine tuval alani duruyor.
+            self.ust_bar.pack(side="top", fill="x", before=self.tuval_alani)
         elif not gorunsun and self.ust_bar.winfo_ismapped():
             self.ust_bar.pack_forget()
-
-    def _ust_bari_bicimle(self) -> None:
-        yt = (self.ayar["yazitipi"], self.ayar["yazitipi-boy"])
-        zemin = self.ayar["cubuk-zemin"]
-        self.ust_bar.config(bg=zemin)
-        self.ust_cizgi.config(bg=self.ayar["palet-cerceve"])
-        self.ust_istem.config(bg=zemin, fg=self.ayar["vurgu"], font=yt)
-        self.ust_ad.config(bg=zemin, fg=self.ayar["cubuk-on"], font=yt)
-        for d in self.ust_dugmeler.values():
-            d.config(bg=zemin, fg=self.ayar["sonuk"], font=yt)
 
     def _ust_adi_sigdir(self) -> None:
         """Uzun dosya adini ortadan kisaltir; uzanti gorunur kalsin."""
@@ -3813,28 +5503,105 @@ class Rubric(tk.Tk):
             filetypes=[(self.m("ac_belgeler"), "*.pdf *.epub *.xps *.cbz *.mobi *.fb2"),
                        ("PDF", "*.pdf"), (self.m("ac_tumu"), "*.*")],
         )
-        for yol in yollar[:-1]:
-            yol = os.path.abspath(yol)
-            if os.path.exists(yol):
-                self.kalici.dosya(yol)["goruldu"] = time.time()
-                self._listeye_ekle(yol)
+        self._arkadakileri_ekle(list(yollar))
         if yollar:
             self.belgeyi_ac(yollar[-1])
 
-    def yer_imi_koy(self, ad: str) -> None:
-        if not self.pdf_yolu:
-            return
-        kayit = self.kalici.dosya(self.pdf_yolu)
-        kayit.setdefault("yer-imleri", {})[ad] = self.ofset()
-        self.kalici.yaz()
-        self.bildir(self.m("yer_imi", ad=ad, s=self.aktif_sayfa + 1), "vurgu")
+    # -- yer imleri (M koy, b liste) ---------------------------------------
+    #
+    # durum.json'da dosya kaydinin `yer-imleri` listesi: {ad, sayfa, oran, zaman}.
+    # Konum konum_imi() ikilisi, yani zoom ve pencere boyundan bagimsiz. Eski
+    # surum {ad: piksel ofseti} yaziyordu; o deger zoom'a bagli oldugu icin
+    # kullanilamaz, ilk yazista liste bastan kurulur.
 
-    def yer_imlerini_goster(self) -> None:
-        imler = self.kalici.dosya(self.pdf_yolu).get("yer-imleri", {})
-        if not imler:
-            self.bildir(self.m("yer_imi_yok"), "uyari")
+    def _yer_imleri(self) -> list[dict]:
+        kayit = self.kalici.dosya(self.pdf_yolu)
+        imler = kayit.get("yer-imleri")
+        if not isinstance(imler, list):
+            imler = kayit["yer-imleri"] = []
+        toplam = self.belge.page_count if self.belge else 0
+        imler[:] = [im for im in imler if isinstance(im, dict) and im.get("ad")
+                    and 0 <= int(im.get("sayfa", -1)) < toplam]
+        return imler
+
+    def _bolum_adi(self, sayfa: int) -> str:
+        """Sayfanin icinde bulundugu en son baslik (icindekilerden); yoksa bos."""
+        ad, en_iyi = "", -1
+        try:
+            toc = self.belge.get_toc()
+        except Exception:
+            toc = []
+        for _, baslik, s in toc:
+            if en_iyi <= s - 1 <= sayfa:           # esitlikte sonraki: en alt baslik
+                ad, en_iyi = baslik, s - 1
+        ad = " ".join(ad.split())
+        return ad if len(ad) <= 60 else ad[:57] + "..."
+
+    def yer_imi_koy(self, ad: str | None = None) -> None:
+        """Bulunulan yere yer imi. Ad verilmezse bolumun basligi. Ayni sayfada
+        zaten adsiz konmus bir yer imi varsa yeni satir acmaz, yerini gunceller;
+        `:bmark <ad>` ayni adla yeniden verilirse o yer imini buraya tasir."""
+        if not self.belge or not self.pdf_yolu:
             return
-        self.bildir("  ".join(sorted(imler)), "vurgu")
+        # konum_imi() degil: J/42G sayfanin ustundeki bosluga iner, orasi bir
+        # onceki sayfaya sayilir ve listede yanlis sayfa yazardi. Yer imi ekranda
+        # bakilan sayfaya (aktif) baglanir; oran eksi de olabilir, geri donus aynidir.
+        sayfa = self.aktif_sayfa
+        yer = self.sayfa_yeri(sayfa)
+        oran = (self.ofset() - yer["y"]) / max(1, yer["h"]) if yer else 0.0
+        imler = self._yer_imleri()
+        if ad:
+            eski = next((im for im in imler if im["ad"] == ad), None)
+        else:
+            eski = next((im for im in imler if im["sayfa"] == sayfa), None)
+            # elle verilmis adi (:bmark) koru; yoksa bolum basligi
+            ad = eski["ad"] if eski else (self._bolum_adi(sayfa)
+                                          or self.m("satir_sayfa", s=sayfa + 1))
+        if eski is not None:
+            imler.remove(eski)
+        imler.append({"ad": ad, "sayfa": sayfa, "oran": round(oran, 4),
+                      "zaman": time.strftime("%Y-%m-%d %H:%M")})
+        self.kalici.yaz()
+        if eski is not None and eski["sayfa"] == sayfa:
+            self.bildir(self.m("yer_imi_var", ad=eski["ad"]), "vurgu")
+        else:
+            self.bildir(self.m("yer_imi", ad=ad, s=sayfa + 1), "vurgu")
+
+    def yer_imi_listesi(self) -> None:
+        """Kendi paneli (Tab'daki icindekilerden ayri): Enter git, x sil, a ekle."""
+        if not self.belge or self._panel_kapandi("yer-imleri"):
+            return
+        imler = sorted(self._yer_imleri(), key=lambda im: (im["sayfa"], im["oran"]))
+        if not imler:
+            tus = (self.komut_tuslari().get("yer-imi-koy") or [f":{self.ad('yer-imi-koy')}"])[0]
+            self.bildir(self.m("yer_imi_yok", tus=tus), "uyari")
+            return
+        self.panel_konumlari = imler
+        secim = 0
+        for i, im in enumerate(imler):
+            if im["sayfa"] <= self.aktif_sayfa:
+                secim = i
+        self._paneli_ac("yer-imleri", [f"  [{im['sayfa'] + 1:>4}]  {im['ad']}" for im in imler],
+                        secim)
+
+    def yer_imi_sil(self, im: dict) -> None:
+        imler = self._yer_imleri()
+        if im in imler:
+            imler.remove(im)
+            self.kalici.yaz()
+            self.bildir(self.m("silindi", ad=im["ad"]), "vurgu")
+
+    def listeden_yer_imi_sil(self) -> None:
+        secili = self.liste.curselection()
+        if not secili:
+            return
+        i = secili[0]
+        self.yer_imi_sil(self.panel_konumlari.pop(i))
+        self.liste.delete(i)
+        if not self.panel_konumlari:
+            self.paneli_kapat()
+        else:
+            self._panel_satiri_sec(i)
 
     def disa_aktar(self, yol: str) -> None:
         if not self.belge:
@@ -3847,6 +5614,156 @@ class Rubric(tk.Tk):
         except Exception as e:
             self.bildir(self.m("yazilamadi", e=e), "hata")
 
+    # -- yazdirma (<C-p>) --------------------------------------------------
+    #
+    # <C-p> Windows'un yazdirma penceresini acar (yazici, sayfa araligi,
+    # kopya); `yazdir-sec` (P) ayar ne derse desin hep onu acar. Pencerede
+    # varsayilan yazici secili gelir - Windows'ta cogu kez "Microsoft Print
+    # to PDF", orada bir kez gercek yazici secilir. `set yazdirma-penceresi
+    # false` <C-p>'yi pencere acmadan `yazdirma-yazicisi`na (bos ise
+    # varsayilana) basan hale cevirir; tanimli yazici yoksa yine pencere acilir.
+    #
+    # Kural (bkz. DURUM "Pencere hatalari"): Tk geri cagrisinin icinden modal
+    # Win32 penceresi acilmaz; onun ic mesaj dongusu tkinter'i GIL'siz
+    # yakalayip sureci dusuruyordu. Bu yuzden pencere ve GDI isi ayri bir is
+    # parcaciginda (_yazdirma_isi), MuPDF ise hep ana is parcaciginda: sayfalar
+    # burada tek tek islenip kuyruga verilir (PyMuPDF is parcacigi guvenli
+    # degil). Yazdirilan, ekranda gorulen: vurgular dahil, gece modu ve arama
+    # isaretleri haric. Suren is varken <C-p> yeniden basilirsa iptal eder.
+
+    def yazdir_sec(self) -> None:
+        """P: Windows'un yazdirma penceresini acar (yazici, sayfa araligi, kopya)."""
+        self.yazdir(pencere=True)
+
+    def yazdir(self, yazici: str | None = None, cikti: str | None = None,
+               pencere: bool | None = None) -> None:
+        """`yazici` verilirse pencere acilmaz, butun sayfalar o yaziciya gider;
+        `cikti` dosya yolu (Microsoft Print to PDF). Ikisi testler icin.
+        `pencere` True ise ayar ne derse desin yazdirma penceresi acilir."""
+        if self._baski is not None:
+            self._baski["durdur"].set()
+            self.bildir(self.m("yazdirma_iptal_ediliyor"), "uyari")
+            return
+        if not self.belge or not self.pdf_yolu:
+            return
+        if pencere is None:
+            pencere = bool(self.ayar["yazdirma-penceresi"])
+        if yazici is None and not pencere:
+            yazici = str(self.ayar["yazdirma-yazicisi"]).strip() or _varsayilan_yazici()
+            if not yazici:              # tanimli yazici yok: secmekten baska yol kalmaz
+                self.bildir(self.m("varsayilan_yazici_yok"), "uyari")
+        self.update_idletasks()
+        b = {"cevap": queue.Queue(), "kuyruk": queue.Queue(maxsize=2),
+             "durdur": threading.Event(), "yol": self.pdf_yolu,
+             "vurgular": [dict(v) for v in self.vurgular] if self.belge.is_pdf else [],
+             "belge": None, "sayfalar": [], "sira": 0, "yazici": "", "olcu": None,
+             "kilitli": yazici is None}
+        if b["kilitli"]:
+            # Pencere acikken rubric tiklanmasin/tus almasin (modal gibi). Sahip
+            # verilemedigi icin (bkz. _ortala_kancasi) kilidi Tk'nin kendisi vurur;
+            # is parcacigindan ilk haber gelince (secim / iptal / hata) acilir.
+            self.attributes("-disabled", True)
+        b["is"] = threading.Thread(
+            target=_yazdirma_isi, daemon=True,
+            args=(int(self.wm_frame(), 16), self.belge.page_count, self.aktif_sayfa + 1,
+                  os.path.basename(self.pdf_yolu), b["cevap"], b["kuyruk"], b["durdur"],
+                  yazici, cikti))
+        self._baski = b
+        b["is"].start()
+        self.after(50, self._baskiyi_yurut)
+
+    def _baski_ilerlemesi(self, i: int) -> None:
+        b = self._baski
+        tus = (self.komut_tuslari().get("yazdir") or [f":{self.ad('yazdir')}"])[0]
+        self.bildir(self.m("yazdiriliyor", i=i, n=len(b["sayfalar"]), yazici=b["yazici"],
+                           tus=tus), "uyari")
+
+    def _baskiyi_yurut(self) -> None:
+        """Is parcaciginin haberlerini okur, siradaki sayfayi isleyip verir."""
+        b = self._baski
+        if b is None:
+            return
+        try:
+            while True:
+                olay = b["cevap"].get_nowait()
+                self._baski_kilidini_ac(b)
+                if olay[0] == "secim":
+                    ilk, son, b["yazici"], *b["olcu"] = olay[1:]
+                    b["sayfalar"] = list(range(max(1, ilk) - 1, min(son, self.belge.page_count
+                                                                    if self.belge else son)))
+                    b["belge"] = self._baski_belgesi(b)
+                    self._baski_ilerlemesi(0)
+                elif olay[0] == "sayfa":
+                    self._baski_ilerlemesi(olay[1])
+                else:                                   # bitti / iptal / hata
+                    self._baskiyi_bitir(olay)
+                    return
+        except queue.Empty:
+            pass
+        except Exception as e:                          # kopya acilamadi vb.
+            b["durdur"].set()
+            self._baskiyi_bitir(("hata", str(e)))
+            return
+
+        kuyruk = b["kuyruk"]
+        if b["belge"] is not None and not b["durdur"].is_set() and not kuyruk.full() \
+                and b["sira"] <= len(b["sayfalar"]):
+            if b["sira"] == len(b["sayfalar"]):
+                kuyruk.put(None)                        # bitti isareti
+            else:
+                try:
+                    kuyruk.put(self._baski_sayfasi(b, b["sayfalar"][b["sira"]]))
+                except Exception as e:
+                    b["durdur"].set()
+                    self._baskiyi_bitir(("hata", str(e)))
+                    return
+            b["sira"] += 1
+        self.after(15 if b["belge"] is not None else 100, self._baskiyi_yurut)
+
+    def _baski_belgesi(self, b: dict) -> pymupdf.Document:
+        """Yazdirma kendi kopyasindan yapilir: kullanici bu arada belge
+        degistirse, kapatsa da is surer. Vurgular kopyaya yeniden islenir."""
+        kopya = pymupdf.open(b["yol"])
+        if kopya.is_pdf:
+            sayfalar = set(b["sayfalar"])
+            for v in b["vurgular"]:
+                if int(v["sayfa"]) in sayfalar:
+                    self._not_yaz(kopya, v)
+        return kopya
+
+    def _baski_sayfasi(self, b: dict, no: int) -> tuple:
+        """Sayfayi yazicinin yazilabilir alanina oranini bozmadan sigdirir
+        (kucultur, buyutmez) ve ortalar. Cozunurluk en cok 300 dpi."""
+        en, boy, dpx, dpy = b["olcu"]
+        r = b["belge"][no].rect
+        k = min(1.0, en / (r.width / 72 * dpx), boy / (r.height / 72 * dpy))
+        z = min(dpx, 300) / 72 * k
+        pix = b["belge"][no].get_pixmap(matrix=pymupdf.Matrix(z, z), alpha=False,
+                                        colorspace=pymupdf.csRGB)
+        dw, dh = round(r.width / 72 * dpx * k), round(r.height / 72 * dpy * k)
+        return (pix.width, pix.height, pix.samples, (en - dw) // 2, (boy - dh) // 2, dw, dh)
+
+    def _baski_kilidini_ac(self, b: dict) -> None:
+        if b.get("kilitli"):
+            b["kilitli"] = False
+            self.attributes("-disabled", False)
+            self.focus_force()                  # pencere kapaninca odak rubric'e donsun
+            self.tuval.focus_set()
+
+    def _baskiyi_bitir(self, olay: tuple) -> None:
+        b, self._baski = self._baski, None
+        if b:
+            self._baski_kilidini_ac(b)
+        if b and b["belge"] is not None:
+            b["belge"].close()
+        if olay[0] == "bitti":
+            self.bildir(self.m("yazdirildi", sayfalar=self.m("sayfa_n", n=olay[1]),
+                               yazici=olay[2]), "vurgu")
+        elif olay[0] == "iptal":
+            self.bildir(self.m("yazdirma_iptal"), "uyari")
+        else:
+            self.bildir(self.m("yazdirilamadi", e=olay[1]), "hata")
+
     def bilgi(self) -> None:
         if not self.belge:
             return
@@ -3857,9 +5774,6 @@ class Rubric(tk.Tk):
             f"{self.m('sayfa_n', n=self.belge.page_count)}",
             "vurgu",
         )
-
-    def yardim(self) -> None:
-        self.bildir(self.m("yardim"), "vurgu")
 
     # -- olaylar -----------------------------------------------------------
 
@@ -3907,6 +5821,19 @@ class Rubric(tk.Tk):
         if not ad:
             return None
         self.gecici_ileti = ""
+
+        # renk bekleyen secim: Enter varsayilan renk, renk tusu o renk, Esc birakir.
+        # Renk tuslari yalnizca burada gecerli; baska tuslar (j, k...) her zamanki isi yapar.
+        if self._bekleyen_vurgu is not None and self.bekleyen is None and not self.sayac:
+            renk = self.vurgu_varsayilani() if ad == "<Return>" \
+                else self.renk_tuslari().get(ad)
+            if renk:
+                self.bekleyeni_vurgula(renk)
+                return "break"
+            if ad == "<Esc>":
+                self._secimi_birak()
+                self.bildir(self.m("secim_birakildi"), "uyari")
+                return "break"
 
         # isaret bekleniyor: bir sonraki tus harf olarak alinir
         if self.bekleyen in ("isaret-koy", "isarete-git"):
@@ -3989,22 +5916,25 @@ class Rubric(tk.Tk):
         if olay.widget is not self:
             return
         olcu = (self.winfo_width(), self.winfo_height())
-        if getattr(self, "_son_olcu", None) == olcu:
+        if self._son_olcu == olcu:
             return
         self._son_olcu = olcu
-        if hasattr(self, "_boyut_isi"):
+        if self._boyut_isi is not None:
             self.after_cancel(self._boyut_isi)
         self._boyut_isi = self.after(120, self.yenile)
 
     def yenile(self) -> None:
-        """Duzeni bastan kurar; zoom/donme/sutun/pencere degisince cagrilir."""
+        """Duzeni bastan kurar; zoom/donme/sutun/pencere degisince cagrilir.
+        Bolunmusse ikisini de: pencere buyudugunde ikisinin de genisligi degisir."""
         if self.mod == "palet":         # palet de pencereyle birlikte genisler
             self.update_idletasks()
             self._palet_genisligini_olc()
-            secili = self.palet_secili()
-            self.palet_doldur()
-            if secili:
-                self._palet_komuta_git(secili)
+            self._paleti_yeniden_doldur()
+        for b in self.bolmeler:
+            with self._bolmede(b):
+                self._bolmeyi_yenile()
+
+    def _bolmeyi_yenile(self) -> None:
         if not self.belge:
             return
         if self._zoom_isi is not None:          # bekleyen tekerlek adimi kaybolmasin
@@ -4013,68 +5943,36 @@ class Rubric(tk.Tk):
             if hedef:
                 self.zoom = hedef
         im = self.konum_imi()
-        self.tuval.delete("all")
-        self.tuval_ogeleri.clear()
+        self._tuvali_temizle()
         self.duzeni_hesapla()
         self.konum_imine_git(im, ciz=False)
         self.ciz()
 
-    def ayarlar_degisti(self) -> None:
+    def ayarlar_degisti(self, gorunumu_koru: bool = False) -> None:
+        """:set ya da tema sonrasi. `gorunumu_koru`: o an acilmis gece modu ve
+        cift sayfa rubricrc'deki ters-renk / sutunlar'a donmesin."""
         self.ayar["yazitipi"] = self.yazitipi_sec(self.ayar["yazitipi"])
         self.metinleri_tazele()
-        self.tuval.config(bg=self.ayar["zemin"])
-        self.cubuk.config(bg=self.ayar["cubuk-zemin"])
-        self.durum.config(bg=self.ayar["cubuk-zemin"], fg=self.ayar["cubuk-on"],
-                          font=(self.ayar["yazitipi"], self.ayar["yazitipi-boy"]))
-        self.sag_durum.config(bg=self.ayar["cubuk-zemin"], fg=self.ayar["vurgu"],
-                              font=(self.ayar["yazitipi"], self.ayar["yazitipi-boy"]))
-        self.komut_girdi.config(bg=self.ayar["cubuk-zemin"], fg=self.ayar["vurgu"],
-                                insertbackground=self.ayar["vurgu"])
-        self.panel.config(bg=self.ayar["panel-zemin"])
-        self.liste.config(bg=self.ayar["panel-zemin"], fg=self.ayar["cubuk-on"],
-                          selectbackground=self.ayar["panel-secili"],
-                          selectforeground=self.ayar["vurgu"],
-                          font=(self.ayar["yazitipi"], self.ayar["yazitipi-boy"]))
-        self._paleti_bicimle()
-        self._ust_bari_bicimle()
+        self._renkleri_uygula()
         self._ust_bari_yerlestir()
         self._ust_adi_sigdir()
         self.cerceveyi_uygula()
-        self.ters = bool(self.ayar["ters-renk"])
-        self.sutunlar = max(1, int(self.ayar["sutunlar"]))
-        self._vurgulari_yeniden_isle()
-        self.onbellek.clear()
+        for b in self.bolmeler:
+            with self._bolmede(b):
+                if not gorunumu_koru:
+                    self.sutunlar = max(1, int(self.ayar["sutunlar"]))
+                self._vurgulari_yeniden_isle()
+                self.onbellek.clear()
+        if not gorunumu_koru:
+            self.ters = bool(self.ayar["ters-renk"])
         self.yenile()
 
-    def _paleti_bicimle(self) -> None:
-        """`:set` ile renk/yazitipi degisince palet de ayni paleti kullansin."""
-        yt = (self.ayar["yazitipi"], self.ayar["yazitipi-boy"])
-        yt_buyuk = (self.ayar["yazitipi"], self.ayar["yazitipi-boy"] + 3)
-        zemin, panel = self.ayar["palet-zemin"], self.ayar["panel-zemin"]
-        self.palet.config(bg=zemin, highlightbackground=self.ayar["palet-cerceve"])
-        self.palet_ust.config(bg=zemin)
-        self.palet_cizgi_ust.config(bg=self.ayar["palet-cerceve"])
-        self.palet_onek.config(bg=zemin, fg=self.ayar["vurgu"], font=yt_buyuk)
-        self.palet_girdi.config(bg=zemin, fg=self.ayar["cubuk-on"], font=yt_buyuk,
-                                insertbackground=self.ayar["vurgu"])
-        self.palet_liste.config(bg=zemin, fg=self.ayar["cubuk-on"], font=yt,
-                                selectbackground=self.ayar["panel-secili"],
-                                selectforeground=self.ayar["vurgu"])
-        self.palet_alt.config(bg=self.ayar["cubuk-zemin"])
-        self.palet_alt_sol.config(bg=self.ayar["cubuk-zemin"],
-                                  fg=self.ayar["sonuk"], font=yt)
-        self.palet_ipucu.config(bg=self.ayar["cubuk-zemin"],
-                                fg=self.ayar["cubuk-on"], font=yt)
-        self.alt_menu.config(bg=panel, highlightbackground=self.ayar["palet-cerceve"])
-        self.alt_baslik.config(bg=panel, fg=self.ayar["sonuk"], font=yt)
-        self.alt_liste.config(bg=panel, fg=self.ayar["cubuk-on"], font=yt,
-                              selectbackground=self.ayar["panel-secili"],
-                              selectforeground=self.ayar["vurgu"])
-        secili = self.ayar["panel-secili"]
-        self.yakala.config(bg=secili, highlightbackground=self.ayar["vurgu"])
-        self.yakala_ust.config(bg=secili, fg=self.ayar["vurgu"], font=yt_buyuk)
-        self.yakala_orta.config(bg=secili, font=yt)
-        self.yakala_alt.config(bg=secili, fg=self.ayar["sonuk"], font=yt)
+    def _paleti_yeniden_doldur(self) -> None:
+        """Palet listesini bastan kurar; secili komut secili kalir."""
+        secili = self.palet_secili()
+        self.palet_doldur()
+        if secili:
+            self._palet_komuta_git(secili)
 
     # -- durum cubugu ------------------------------------------------------
 
@@ -4089,18 +5987,26 @@ class Rubric(tk.Tk):
         mod = {"normal": "", "komut": "[:]", "arama": "[/]", "palet": "[^K]",
                "icindekiler": self.m("mod_icindekiler"),
                "vurgular": self.m("mod_vurgular"),
-               "belgeler": self.m("mod_belgeler")}.get(self.mod, "")
-        if self.kalem and self.mod == "normal":
-            mod = self.m("mod_kalem")
+               "belgeler": self.m("mod_belgeler"),
+               "yer-imleri": self.m("mod_yer_imleri")}.get(self.mod, "")
+        if self.mod == "normal":
+            mod = " ".join(self.m(a) for a, acik in (("mod_kalem", self.kalem),
+                                                     ("mod_baglantilar", self.baglantilar_acik))
+                           if acik)
         if self.bekleyen:
             mod = self.m(f"bekle_{self.bekleyen}") if self.bekleyen != "g" else "[g]"
+        sira = self._sira() if len(self.belgeler) > 1 else -1
+        # Bolunmusse hangi bolmeye bakildigi da {belgeler} icinde: " [sag 2/3]".
+        # Ayri yer tutucu isteyen icin {bolme} de var.
+        yan = self._yan_adi(self.bolme) if self.bolundu() else ""
+        liste = f"{sira + 1}/{len(self.belgeler)}" if sira >= 0 else ""
         return {
             "mod": mod,
             "dosya": os.path.basename(self.pdf_yolu) if self.pdf_yolu else "-",
             "ad": os.path.basename(self.pdf_yolu) if self.pdf_yolu else self.m("belge_yok"),
             "yol": self.pdf_yolu or "-",
-            "belgeler": f" [{self._sira() + 1}/{len(self.belgeler)}]"
-                        if len(self.belgeler) > 1 and self._sira() >= 0 else "",
+            "bolme": f" [{yan}]" if yan else "",
+            "belgeler": f" [{' '.join(x for x in (yan, liste) if x)}]" if (yan or liste) else "",
             "sayfa": sayfa,
             "toplam": toplam,
             "yuzde": int(100 * sayfa / toplam) if toplam else 0,
@@ -4115,26 +6021,33 @@ class Rubric(tk.Tk):
         }
 
     def durumu_tazele(self) -> None:
+        """Durum cubugu ve pencere basligi. Her cizimde (her kaydirma adiminda)
+        cagrilir; degismeyen parca yeniden yazilmaz. Basligin her yazilisi
+        Win32'de WM_SETTEXT (bkz. _win32), tek basina ~0.7 ms tutuyordu."""
         d = self.durum_degerleri()
         if self.gecici_ileti:
-            self.durum.config(text=self.gecici_ileti,
-                              fg=getattr(self, "_ileti_rengi", self.ayar["cubuk-on"]))
+            metin, renk = self.gecici_ileti, self._ileti_rengi
         else:
             try:
                 metin = self.ayar["durum-bicimi"].format_map(_Esnek(d))
             except Exception:
                 metin = f"{d['ad']}  {d['sayfa']}/{d['toplam']}"
-            self.durum.config(text=metin, fg=self.ayar["cubuk-on"])
-
+            renk = self.ayar["cubuk-on"]
         sag = self.sayac or ""
         if self.belge:
             sag = f"{sag}  {d['sayfa']}/{d['toplam']}".strip()
-        self.sag_durum.config(text=sag)
+        if (metin, renk, sag) != self._durum_yazili:
+            self._durum_yazili = (metin, renk, sag)
+            self.durum.config(text=metin, fg=renk)
+            self.sag_durum.config(text=sag)
 
         try:
-            self.title(self.ayar["baslik-bicimi"].format_map(_Esnek(d)))
+            baslik = self.ayar["baslik-bicimi"].format_map(_Esnek(d))
         except Exception:
-            self.title("rubric")
+            baslik = "rubric"
+        if baslik != self._baslik:
+            self._baslik = baslik
+            self.title(baslik)
         if d["ad"] != self._ust_ad_ham:          # her kaydirmada olcmesin
             self._ust_ad_ham = d["ad"]
             self._ust_adi_sigdir()
@@ -4142,20 +6055,54 @@ class Rubric(tk.Tk):
     # -- cikis -------------------------------------------------------------
 
     def cik(self) -> None:
-        self._bekleyen_zoomu_birak()
-        if self._komsu_isi is not None:
-            self.after_cancel(self._komsu_isi)
-            self._komsu_isi = None
-        if hasattr(self, "_boyut_isi"):         # yoksa yok edilmis pencerede yenile() calisir
+        if self._tepsi and not self._tamamen_cik:
+            self._tepsiye_in()                  # tepsi modu: kapanmaz, gizlenir
+            return
+        self._tepsi_kaldir()
+        for b in self.bolmeler:                 # her bolmenin bekleyen isleri
+            with self._bolmede(b):
+                self._bekleyen_zoomu_birak()
+                for isim in ("_komsu_isi", "_capa_isi"):
+                    if getattr(self, isim) is not None:
+                        self.after_cancel(getattr(self, isim))
+                        setattr(self, isim, None)
+        if self._boyut_isi is not None:         # yoksa yok edilmis pencerede yenile() calisir
             self.after_cancel(self._boyut_isi)
-        self.konumu_kaydet()
-        self.oturumu_kaydet()                   # acilista ayni belgeler geri gelsin
-        try:
-            if self.belge:
-                self.belge.close()
-        except Exception:
-            pass
+        if self._ipc_isi is not None:           # tek-pencere yoklamasi da dursun
+            self.after_cancel(self._ipc_isi)
+            self._ipc_isi = None
+        if self._baski is not None:             # suren yazdirma: is parcacigi belgeyi iptal etsin
+            self._baski["durdur"].set()
+            if self._baski["belge"] is not None:
+                self._baski["belge"].close()
+            self._baski = None
+        for b in self.bolmeler:                 # her bolmenin kaldigi yer yazilsin
+            with self._bolmede(b):
+                self.konumu_kaydet()
+        self.oturumu_kaydet()                   # acilista ayni bolmeler geri gelsin
+        for b in self.bolmeler:
+            try:
+                if b.belge:
+                    b.belge.close()
+            except Exception:
+                pass
         self.destroy()
+
+
+def _bolme_ozelligi(ad: str) -> property:
+    """`self.<ad>` -> `self.bolmeler[self.etkin].<ad>`.
+
+    Dogrudan ozellik; `__getattr__`/`__setattr__` degil: butun oznitelik
+    erisimini yavaslatmasin ve hangi adin bolmeye ait oldugu tek listede
+    (BOLME_ALANLARI) acikca dursun.
+    """
+    return property(lambda s: getattr(s.bolmeler[s.etkin], ad),
+                    lambda s, d: setattr(s.bolmeler[s.etkin], ad, d))
+
+
+for _ad in BOLME_ALANLARI:
+    setattr(Rubric, _ad, _bolme_ozelligi(_ad))
+del _ad
 
 
 class _Esnek(dict):
@@ -4257,6 +6204,262 @@ def _pencere_cercevesi(pencere: tk.Tk, gizle: bool) -> None:
     u32.SetWindowPos(hwnd, None, 0, 0, 0, 0, _SWP_CERCEVE)
 
 
+# ---------------------------------------------------------------------------
+# Yazdirma: Windows yazdirma penceresi + GDI. Yalnizca _yazdirma_isi'nin is
+# parcaciginda calisir (bkz. Rubric.yazdir); MuPDF'e hic dokunmaz.
+# ---------------------------------------------------------------------------
+
+_PD_PAGENUMS = 0x2
+_PD_NOSELECTION = 0x4
+_PD_RETURNDC = 0x100
+_PD_ENABLEPRINTHOOK = 0x1000
+_PD_USEDEVMODECOPIESANDCOLLATE = 0x40000
+_PD_HIDEPRINTTOFILE = 0x100000
+
+
+class _PRINTDLGW(ctypes.Structure):
+    # 64 bit'te varsayilan hizalama (commdlg.h yalnizca 32 bit'te pack(1))
+    _fields_ = [("lStructSize", wt.DWORD), ("hwndOwner", wt.HWND),
+                ("hDevMode", wt.HGLOBAL), ("hDevNames", wt.HGLOBAL), ("hDC", wt.HDC),
+                ("Flags", wt.DWORD), ("nFromPage", wt.WORD), ("nToPage", wt.WORD),
+                ("nMinPage", wt.WORD), ("nMaxPage", wt.WORD), ("nCopies", wt.WORD),
+                ("hInstance", wt.HINSTANCE), ("lCustData", wt.LPARAM),
+                ("lpfnPrintHook", ctypes.c_void_p), ("lpfnSetupHook", ctypes.c_void_p),
+                ("lpPrintTemplateName", wt.LPCWSTR), ("lpSetupTemplateName", wt.LPCWSTR),
+                ("hPrintTemplate", wt.HGLOBAL), ("hSetupTemplate", wt.HGLOBAL)]
+
+
+class _DOCINFOW(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_int), ("lpszDocName", wt.LPCWSTR),
+                ("lpszOutput", wt.LPCWSTR), ("lpszDatatype", wt.LPCWSTR), ("fwType", wt.DWORD)]
+
+
+class _BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [("biSize", wt.DWORD), ("biWidth", wt.LONG), ("biHeight", wt.LONG),
+                ("biPlanes", wt.WORD), ("biBitCount", wt.WORD), ("biCompression", wt.DWORD),
+                ("biSizeImage", wt.DWORD), ("biXPelsPerMeter", wt.LONG),
+                ("biYPelsPerMeter", wt.LONG), ("biClrUsed", wt.DWORD),
+                ("biClrImportant", wt.DWORD)]
+
+
+def _gdi():
+    """gdi32/comdlg32/kernel32 imzalari; 64 bit tutamaclar int'e kirpilmasin."""
+    if getattr(_gdi, "hazir", None):
+        return _gdi.hazir
+    g, cd, k32 = ctypes.WinDLL("gdi32"), ctypes.WinDLL("comdlg32"), ctypes.WinDLL("kernel32")
+    cd.PrintDlgW.argtypes = [ctypes.POINTER(_PRINTDLGW)]
+    cd.PrintDlgW.restype = wt.BOOL
+    cd.CommDlgExtendedError.restype = wt.DWORD
+    g.CreateDCW.argtypes = [wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, ctypes.c_void_p]
+    g.CreateDCW.restype = wt.HDC
+    g.GetDeviceCaps.argtypes = [wt.HDC, ctypes.c_int]
+    g.StartDocW.argtypes = [wt.HDC, ctypes.POINTER(_DOCINFOW)]
+    for ad in ("StartPage", "EndPage", "EndDoc", "AbortDoc", "DeleteDC"):
+        getattr(g, ad).argtypes = [wt.HDC]
+    g.SetStretchBltMode.argtypes = [wt.HDC, ctypes.c_int]
+    g.SetBrushOrgEx.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
+    g.StretchDIBits.argtypes = [wt.HDC] + [ctypes.c_int] * 8 + [
+        ctypes.c_char_p, ctypes.POINTER(_BITMAPINFOHEADER), wt.UINT, wt.DWORD]
+    k32.GlobalLock.argtypes = [wt.HGLOBAL]
+    k32.GlobalLock.restype = ctypes.c_void_p
+    k32.GlobalUnlock.argtypes = [wt.HGLOBAL]
+    k32.GlobalFree.argtypes = [wt.HGLOBAL]
+    _gdi.hazir = (g, cd, k32)
+    return _gdi.hazir
+
+
+_KANCA = ctypes.WINFUNCTYPE(ctypes.c_size_t, wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
+
+
+def _ortala_kancasi(ana: int):
+    """Yazdirma penceresini rubric'in ortasina koyup one getiren kanca.
+
+    Pencereye sahip (hwndOwner) olarak rubric verilemiyor: sahip baska is
+    parcaciginda (Tk'nin) olunca PrintDlg pencereyi hic kurmadan bekliyor
+    (duz Tk ile de denendi). Sahipsiz acilinca da rubric'in arkasinda
+    kalabilir; WM_INITDIALOG'da yerini ve odagi biz veriyoruz.
+    """
+    u32 = ctypes.windll.user32
+
+    def kanca(hwnd, ileti, _wp, _lp):
+        if ileti != 0x0110:                          # WM_INITDIALOG
+            return 0
+        a, d = wt.RECT(), wt.RECT()
+        if u32.GetWindowRect(wt.HWND(ana), ctypes.byref(a)) and \
+                u32.GetWindowRect(hwnd, ctypes.byref(d)):
+            x = a.left + (a.right - a.left - (d.right - d.left)) // 2
+            y = a.top + (a.bottom - a.top - (d.bottom - d.top)) // 3
+            u32.SetWindowPos(hwnd, None, max(x, 0), max(y, 0), 0, 0, 0x1 | 0x4)  # NOSIZE NOZORDER
+        u32.SetForegroundWindow(hwnd)
+        return 1                                     # odagi ilk denetime varsayilan versin
+    return _KANCA(kanca)
+
+
+class _PRINTER_INFO_4W(ctypes.Structure):
+    _fields_ = [("pPrinterName", wt.LPWSTR), ("pServerName", wt.LPWSTR),
+                ("Attributes", wt.DWORD)]
+
+
+def _yazicilar() -> list[str]:
+    """Kurulu yazicilarin adlari (yerel + baglanti). Hata olursa bos liste."""
+    try:
+        ws = ctypes.WinDLL("winspool.drv")
+        ws.EnumPrintersW.argtypes = [wt.DWORD, wt.LPWSTR, wt.DWORD, wt.LPBYTE,
+                                     wt.DWORD, ctypes.POINTER(wt.DWORD),
+                                     ctypes.POINTER(wt.DWORD)]
+        gerek, sayi = wt.DWORD(0), wt.DWORD(0)
+        bayrak = 0x2 | 0x4                      # LOCAL | CONNECTIONS
+        ws.EnumPrintersW(bayrak, None, 4, None, 0, ctypes.byref(gerek), ctypes.byref(sayi))
+        if not gerek.value:
+            return []
+        tampon = ctypes.create_string_buffer(gerek.value)
+        if not ws.EnumPrintersW(bayrak, None, 4, ctypes.cast(tampon, wt.LPBYTE),
+                                gerek.value, ctypes.byref(gerek), ctypes.byref(sayi)):
+            return []
+        dizi = ctypes.cast(tampon, ctypes.POINTER(_PRINTER_INFO_4W))
+        return sorted({dizi[i].pPrinterName for i in range(sayi.value) if dizi[i].pPrinterName})
+    except Exception:
+        return []
+
+
+def _varsayilan_yazici() -> str:
+    """Windows'un varsayilan yazicisinin adi; tanimli degilse bos dize.
+
+    Ilk cagri uzunlugu sorar, ikincisi adi yazar (Win32'nin her yerdeki
+    kalibi). Yazici hic yoksa GetDefaultPrinter basarisiz doner.
+    """
+    try:
+        ws = ctypes.WinDLL("winspool.drv")
+        ws.GetDefaultPrinterW.argtypes = [wt.LPWSTR, ctypes.POINTER(wt.DWORD)]
+        ws.GetDefaultPrinterW.restype = wt.BOOL
+        n = wt.DWORD(0)
+        ws.GetDefaultPrinterW(None, ctypes.byref(n))
+        if not n.value:
+            return ""
+        tampon = ctypes.create_unicode_buffer(n.value)
+        if not ws.GetDefaultPrinterW(tampon, ctypes.byref(n)):
+            return ""
+        return tampon.value
+    except Exception:
+        return ""
+
+
+def _yazici_adi(k32, hdevnames) -> str:
+    """DEVNAMES'ten secilen yazicinin adi (wDeviceOffset karakter cinsinden)."""
+    if not hdevnames:
+        return ""
+    p = k32.GlobalLock(hdevnames)
+    if not p:
+        return ""
+    try:
+        return ctypes.wstring_at(p + ctypes.c_ushort.from_address(p + 2).value * 2)
+    finally:
+        k32.GlobalUnlock(hdevnames)
+
+
+def _dib(en: int, boy: int, ornek: bytes) -> bytes:
+    """RGB ornekleri -> 24 bit DIB: BGR, alttan uste, satirlar 4 bayta hizali."""
+    bgr = bytearray(ornek)
+    bgr[0::3] = ornek[2::3]
+    bgr[2::3] = ornek[0::3]
+    satir = en * 3
+    dolgu = bytes(-satir % 4)
+    return b"".join(bgr[i * satir:(i + 1) * satir] + dolgu for i in range(boy - 1, -1, -1))
+
+
+def _yazdirma_isi(hwnd: int, toplam: int, aktif: int, ad: str, cevap: queue.Queue,
+                  kuyruk: queue.Queue, durdur: threading.Event,
+                  yazici: str | None = None, cikti: str | None = None) -> None:
+    """Yazdirma penceresi, sonra kuyruktan gelen sayfalari yaziciya basar.
+
+    Haberler `cevap`a: ("secim", ilk, son, yazici, en, boy, dpi_x, dpi_y) ana
+    is parcacigi sayfalari islemeye baslasin diye; ("sayfa", n); sonunda
+    ("bitti", n, yazici) / ("iptal",) / ("hata", metin). Kuyruktaki oge
+    (en, boy, rgb, x, y, hedef_en, hedef_boy); None bitti demek.
+    """
+    try:
+        g, cd, k32 = _gdi()
+        if yazici:
+            hdc = g.CreateDCW("WINSPOOL", yazici, None, None)
+            ilk, son = 1, toplam
+            if not hdc:
+                raise OSError(f"CreateDC: {yazici}")
+        else:
+            pd = _PRINTDLGW()
+            pd.lStructSize = ctypes.sizeof(pd)
+            kanca = _ortala_kancasi(hwnd)       # cagri bitene kadar referansi burada
+            pd.lpfnPrintHook = ctypes.cast(kanca, ctypes.c_void_p)
+            pd.Flags = (_PD_RETURNDC | _PD_NOSELECTION | _PD_USEDEVMODECOPIESANDCOLLATE
+                        | _PD_HIDEPRINTTOFILE | _PD_ENABLEPRINTHOOK)
+            pd.nMinPage, pd.nMaxPage = 1, min(toplam, 0xFFFF)
+            pd.nFromPage = pd.nToPage = min(aktif, 0xFFFF)   # "Sayfalar" kutusunda bu sayfa
+            pd.nCopies = 1
+            tamam = cd.PrintDlgW(ctypes.byref(pd))
+            kod = cd.CommDlgExtendedError()
+            yazici = _yazici_adi(k32, pd.hDevNames)
+            for tutamac in (pd.hDevMode, pd.hDevNames):
+                if tutamac:
+                    k32.GlobalFree(tutamac)
+            if not tamam:
+                cevap.put(("hata", f"PrintDlg 0x{kod:x}") if kod else ("iptal",))
+                return
+            hdc = pd.hDC
+            if not hdc:
+                raise OSError("PrintDlg: DC yok")
+            ilk, son = (pd.nFromPage, pd.nToPage) if pd.Flags & _PD_PAGENUMS else (1, toplam)
+    except Exception as e:
+        cevap.put(("hata", str(e)))
+        return
+
+    belge_acik = False
+    try:
+        en, boy = g.GetDeviceCaps(hdc, 8), g.GetDeviceCaps(hdc, 10)       # HORZRES VERTRES
+        dpx, dpy = g.GetDeviceCaps(hdc, 88), g.GetDeviceCaps(hdc, 90)     # LOGPIXELSX/Y
+        bilgi = _DOCINFOW(ctypes.sizeof(_DOCINFOW), ad, cikti, None, 0)
+        # Microsoft Print to PDF burada "farkli kaydet" sorar; vazgecilirse <= 0
+        if g.StartDocW(hdc, ctypes.byref(bilgi)) <= 0:
+            cevap.put(("iptal",))
+            return
+        belge_acik = True
+        cevap.put(("secim", ilk, son, yazici, en, boy, dpx, dpy))
+        g.SetStretchBltMode(hdc, 4)                                       # HALFTONE
+        g.SetBrushOrgEx(hdc, 0, 0, None)
+        n = 0
+        while True:
+            if durdur.is_set():
+                g.AbortDoc(hdc)
+                belge_acik = False
+                cevap.put(("iptal",))
+                return
+            try:
+                oge = kuyruk.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if oge is None:
+                break
+            w, h, ornek, x, y, dw, dh = oge
+            bas = _BITMAPINFOHEADER(ctypes.sizeof(_BITMAPINFOHEADER), w, h, 1, 24, 0)
+            if g.StartPage(hdc) <= 0:
+                raise OSError("StartPage")
+            if g.StretchDIBits(hdc, x, y, dw, dh, 0, 0, w, h, _dib(w, h, ornek),
+                               ctypes.byref(bas), 0, 0x00CC0020) in (0, -1):   # SRCCOPY
+                raise OSError("StretchDIBits")
+            if g.EndPage(hdc) <= 0:
+                raise OSError("EndPage")
+            n += 1
+            cevap.put(("sayfa", n))
+        belge_acik = False
+        if g.EndDoc(hdc) <= 0:
+            raise OSError("EndDoc")
+        cevap.put(("bitti", n, yazici))
+    except Exception as e:
+        if belge_acik:
+            g.AbortDoc(hdc)
+        cevap.put(("hata", str(e)))
+    finally:
+        g.DeleteDC(hdc)
+
+
 def main() -> int:
     # Birden cok dosya verilebilir (Explorer'da coklu secip surukle): hepsi
     # listeye girer, sonuncusu acilir.
@@ -4270,3 +6473,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+_pymupdf_bekle()                        # import edildi (testler, tus-karti.py)

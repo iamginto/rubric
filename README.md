@@ -30,7 +30,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 - `uv run kisayol.py` puts a desktop shortcut (no console, drop PDFs on it).
 - `uv run --with pyinstaller exe-yap.py` builds `dist\rubric\rubric.exe`. Ship the whole folder.
 - `uv run tus-karti.py` prints a key cheat sheet PDF to the desktop.
-- `rubric.cmd` is for associating `.pdf` files.
+- `uv run birlikte-ac.py` adds rubric to Windows' "Open with" list (`--kaldir` undoes it).
 
 ## Keys
 

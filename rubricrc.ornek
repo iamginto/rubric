@@ -72,9 +72,42 @@ set son-belgeler         10       # belge listesinin siniri (<C-Left>/<C-Right>,
 set kapanan-belgeler     3        # q ile kapatilanlardan kaci <C-e> ile geri acilir (1-10;
                                   # Ctrl-K > ayarlar > geri-acma-siniri de buraya yazar)
 set onbellek             12       # bellekte tutulan islenmis sayfa sayisi
+# Hedefi yalnizca "su sayfa" olan bir baglantiya (dizin girdisi, /Fit)
+# tiklayinca rubric gidilecek yeri belgenin metninden bulur: "Fig. 2.18"
+# -> hedef sayfada "Figure 2.18 ..." ile baslayan satir. Bulunan yer bu
+# kadar ms isaretli kalir (ayni sayfaya donen baglantida bir sey oldugu
+# belli olsun diye). 0 yazarsan isaretleme olmaz, gidis yine dogru olur.
+set capa-suresi          1400
+# Bolunmus gorunumde (Alt+Right / Alt+Left) imlecin uzerinde durdugu bolme
+# etkin olur: sag belgenin tablosuna gidip j'ye basan sagi kaydirir.
+# false yaparsan bolme yalnizca tikla ve Alt+w ile degisir - tekerlek yine
+# imlecin altindaki bolmeyi cevirir.
+set fare-bolme           true
 set sigdir               genislik # genislik | sayfa | yok
 set durum-cubugu         true
 # set vurgu-rengi          #ffd54a  # metin vurgusu (sayfa beyaz: acik renk sec)
+# Secilen metni hangi tus hangi renge boyar (tus:renk). Renkler:
+# sari yesil mavi pembe turuncu kirmizi mor - "sari" temanin vurgu-rengi'dir,
+# otekiler sabit. Ctrl-K > vurgu renkleri'nden atayinca buraya kendisi yazar.
+# Tus '#' olamaz.
+set vurgu-tuslari        y:sari g:yesil b:mavi p:pembe o:turuncu r:kirmizi m:mor
+# Secimden sonra Enter'in koydugu renk. Ctrl-K > vurgu renkleri > bosluk.
+set vurgu-varsayilan     sari
+# Acik: ikinci kez acilan bir PDF (orn. "Birlikte ac") calisan rubric'e gider,
+# yeni surec pymupdf'i hic yuklemeden kapanir - acilis ~2 sn yerine ~0,1 sn.
+# false yaparsan her dosya kendi penceresinde acilir.
+set tek-pencere          true
+# Yazdirma. <C-p> Windows'un yazdirma penceresini acar (yazici, sayfa araligi,
+# kopya); P de hep onu acar. false yaparsan <C-p> pencere acmadan basar.
+set yazdirma-penceresi   true
+# Pencere acmadan basarken hangi yazici. Yazilmadiginda Windows'un varsayilani
+# kullanilir - ki cogu kez "Microsoft Print to PDF" oluyor ve zaten PDF olanin
+# PDF'ini cikariyor. Adi elle yazmak yerine: Ctrl-K > ayarlar > yazici.
+# set yazdirma-yazicisi  Brother HL-L2350DW
+# Tepsi modu: kapatinca rubric cikmaz, saatin yanindaki simgeye iner; yeniden
+# acilis anlik (Python, Tk ve MuPDF bellekte kalir). Gercekten cikmak: simgeye
+# sag tik > cik. Ctrl-K > ayarlar > tepsi bunu acip kapatir.
+set tepsi                false
 set baslik-cubugu        true     # rubric'in temali ust bari (Ctrl-K > baslik-cubugu)
 set windows-basligi      false    # Windows'un kendi beyaz baslik cubugu
 # Ust bar da durum cubugu da suruklenince pencereyi tasir, cift tik buyutur.
@@ -86,7 +119,9 @@ set windows-basligi      false    # Windows'un kendi beyaz baslik cubugu
 # Yer tutucular:
 #   {mod} {dosya} {ad} {yol} {sayfa} {toplam} {yuzde}
 #   {zoom} {sigdir} {sutun} {ters} {donme} {arama}
-#   {belgeler}  -> " [2/3]": listede kacinci belge (tek belgede bos)
+#   {belgeler}  -> " [2/3]": listede kacinci belge (tek belgede bos).
+#                Bolunmusse yani da tasir: " [sag 2/3]" / " [sol]"
+#   {bolme}     -> " [sag]" / " [sol]": bakilan bolme (bolunmemisse bos)
 # Bilinmeyen bir yer tutucu programi dusurmez, oldugu gibi yazilir.
 # ---------------------------------------------------------------------------
 set durum-bicimi   {mod} {ad}{belgeler}  {sayfa}/{toplam} ({yuzde}%)  z:{zoom}%  {sigdir}{ters}{arama}
@@ -102,10 +137,10 @@ set baslik-bicimi  {ad} [{sayfa}/{toplam}] - rubric
 # map <tus> <komut>  /  unmap <tus>
 # Tus yazimi: tek karakter (j, G, +), ozel tus (<Tab> <Esc> <Space> <Return>
 # <Up> <Down> <Left> <Right> <Prior> <Next> <Home> <End> <F1>..<F12>),
-# ctrl bileskesi (<C-d>, <C-r>, <C-0>).
+# ctrl bileskesi (<C-d>, <C-r>, <C-0>), alt bileskesi (<A-Right>, <A-w>).
 #
 # Komut olarak asagidaki ic komutlardan biri yazilir. Bir ':' komutu da
-# dogrudan baglanabilir:  map b :goto 1
+# dogrudan baglanabilir:  map <F3> :goto 1
 # Paletteki her dildeki ad da gecer: map x next-page / map x nächste-seite
 # (palet dosyaya hep asagidaki ic adi yazar, dil degisince bozulmasin diye).
 #
@@ -119,7 +154,9 @@ set baslik-bicimi  {ad} [{sayfa}/{toplam}] - rubric
 #   ara-ileri ara-geri sonraki-bulgu onceki-bulgu vurguyu-kapat
 #   komut-modu cik geri-zipla ileri-zipla yeniden-yukle ac
 #   sonraki-belge onceki-belge belgeyi-kapat kapanani-ac belgeler
-#   isaret-koy isarete-git
+#   bolme-saga bolme-sola bolme-gec bolme-tek
+#   isaret-koy isarete-git yer-imi-koy yer-imleri
+#   yazdir yazdir-sec baglantilar vurgu-renkleri geri-acma-siniri yazici
 #   tema-<ad>  (her tema bir komut: map <F9> tema-kagit)
 # ---------------------------------------------------------------------------
 
@@ -127,7 +164,7 @@ set baslik-bicimi  {ad} [{sayfa}/{toplam}] - rubric
 
 # Ornekler:
 # map <C-n> sonraki-sayfa
-# map <C-p> onceki-sayfa
+# map <C-y> onceki-sayfa
 # map w     sigdir-genislik
 # map <F2>  :goto 1
 # unmap d

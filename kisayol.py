@@ -28,7 +28,8 @@ PYW = os.path.join(KOK, ".venv", "Scripts", "pythonw.exe")
 # Renkler uygulamanin ayar tablosundan; tema degisince ikon da doner.
 ZEMIN = rubric.renk("zemin")
 VURGU = rubric.renk("vurgu")
-CERCEVE = rubric.renk("palet-cerceve")
+# Kivrik kose ve sayfa satirlari: vurgunun zemine dogru koyulmus hali
+KOYU = tuple(0.6 * v + 0.4 * z for v, z in zip(VURGU, ZEMIN))
 
 
 def ikon_uret(yol: str = IKON) -> str:
@@ -40,11 +41,18 @@ def ikon_uret(yol: str = IKON) -> str:
     belge = pymupdf.open()
     sayfa = belge.new_page(width=256, height=256)
     sayfa.draw_rect(sayfa.rect, color=None, fill=ZEMIN)
-    sayfa.draw_rect(pymupdf.Rect(10, 10, 246, 246), color=CERCEVE, width=6)
-    sayfa.insert_font(fontname="consb", fontfile=r"C:\Windows\Fonts\consolab.ttf")
-    # Terminal istemi gibi:  >_
-    sayfa.insert_text((44, 168), ">", fontsize=150, fontname="consb", color=VURGU)
-    sayfa.draw_rect(pymupdf.Rect(128, 150, 212, 168), color=None, fill=VURGU)
+
+    def cokgen(renk, *noktalar):
+        sayfa.draw_polyline([pymupdf.Point(x, y) for x, y in noktalar],
+                            color=None, fill=renk, closePath=True)
+
+    # "sayfa-r": r'nin kolu kosesi kivrik kucuk bir sayfa. Sap ile kol tek
+    # cokgen: ayri cizilince ortak kenarda kenar yumusatmasi cizgi birakir.
+    cokgen(VURGU, (72, 60), (160, 60), (184, 84), (184, 104),
+           (108, 104), (108, 208), (72, 208))
+    cokgen(KOYU, (160, 60), (160, 84), (184, 84))
+    sayfa.draw_rect(pymupdf.Rect(120, 76, 148, 80), color=None, fill=KOYU)
+    sayfa.draw_rect(pymupdf.Rect(120, 88, 172, 92), color=None, fill=KOYU)
 
     png = sayfa.get_pixmap(alpha=False).tobytes("png")
     belge.close()

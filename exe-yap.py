@@ -47,12 +47,30 @@ PyInstaller.__main__.run([
 
 shutil.rmtree(INSA, ignore_errors=True)     # ara dosyalar, exe'ye gerek yok
 
-# Eski tek dosyalik surum kaldiysa kaldir: yanlislikla yavas olan acilmasin.
-eski = os.path.join(DIST, "rubric.exe")
-if os.path.isfile(eski):
-    try:
-        os.remove(eski)
-    except OSError as e:
-        print(f"eski {eski} silinemedi (acik mi?): {e}")
+# --- Tcl/Tk'nin kullanilmayan veri klasorleri ------------------------------
+#
+# Paketin 987 dosyasinin 922'si Tcl/Tk verisiydi ve cogu hic okunmuyor.
+# Dosya sayisi acilisin bedeli: Defender ilk acilista klasoru dosya dosya
+# tariyor. Atilanlar:
+#   tzdata  - Tcl'in saat dilimi tablosu (609 dosya). rubric saati Python'un
+#             time.strftime'indan aliyor, Tcl clock'a hic girmiyor.
+#   msgs    - Tk iletisim kutulari icin ceviri katalogu. rubric Tk'nin kendi
+#             kutularini kullanmiyor; dosya secici Windows'un kendi penceresi.
+#   images  - Tk ornek gorselleri.
+# Encoding tablolari **atilmiyor**: Tcl acilirken sistemin kod sayfasina ait
+# olani ariyor, yanlis birini silmek baska makinede acilisi bozar.
+ATILACAK = [("_internal", "_tcl_data", "tzdata"),
+            ("_internal", "_tcl_data", "msgs"),
+            ("_internal", "_tk_data", "msgs"),
+            ("_internal", "_tk_data", "images")]
 
-print("\nhazir:", os.path.join(DIST, "rubric", "rubric.exe"))
+atilan = 0
+for parcalar in ATILACAK:
+    yol = os.path.join(DIST, "rubric", *parcalar)
+    if os.path.isdir(yol):
+        atilan += sum(len(d) for _, _, d in os.walk(yol))
+        shutil.rmtree(yol, ignore_errors=True)
+
+kalan = sum(len(d) for _, _, d in os.walk(os.path.join(DIST, "rubric")))
+print(f"\nkullanilmayan Tcl/Tk verisi atildi: {atilan} dosya, kalan {kalan}")
+print("hazir:", os.path.join(DIST, "rubric", "rubric.exe"))
