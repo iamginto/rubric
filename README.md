@@ -8,12 +8,24 @@ default theme is red phosphor.
 
 ## Install
 
-Needs Windows 10/11 and [uv](https://docs.astral.sh/uv/).
+Windows 10/11. Paste into PowerShell:
 
 ```powershell
-uv sync
-uv run rubric.py <file.pdf>
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
+
+Open a new terminal (so `uv` is on PATH), then:
+
+```powershell
+git clone https://github.com/iamginto/rubric.git
+cd rubric
+uv sync
+uv run rubric.py
+```
+
+Skip the first step if you already have [uv](https://docs.astral.sh/uv/).
+No git? Download the ZIP from GitHub, extract it and start from `cd`. To open
+a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 
 - `uv run kisayol.py` puts a desktop shortcut (no console, drop PDFs on it).
 - `uv run --with pyinstaller exe-yap.py` builds `dist\rubric\rubric.exe`. Ship the whole folder.
