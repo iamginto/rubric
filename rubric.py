@@ -297,6 +297,9 @@ import contextlib                                 # noqa: E402
 import json                                       # noqa: E402
 import queue                                      # noqa: E402
 import re                                         # noqa: E402
+import hashlib                                    # noqa: E402
+import shutil                                    # noqa: E402
+import subprocess                                 # noqa: E402
 import threading                                  # noqa: E402
 import time                                       # noqa: E402
 
@@ -375,7 +378,11 @@ VARSAYILAN_AYAR = {
     "yakinlastirma-adimi": 1.15,
     "en-az-yakinlastirma": 0.10,
     "en-cok-yakinlastirma": 10.0,
-    "ters-renk":      False,       # gece modu (renkleri ters cevir)
+    "ters-renk":      False,       # gece modu
+    # Gece modu nasil boyar. tema: sayfa gri tonlanir, siyah yazi temanin
+    # yazi rengine (cubuk-on), beyaz kagit temanin zeminine esler (zathura'nin
+    # recolor'u); tema degisince sayfa da doner. ters: duz renk tersleme.
+    "gece-modu":      "tema",
     "son-konum":      True,        # dosyayi kaldigi yerden ac
     # Belge listesi (<C-Left>/<C-Right>). zathura'nin yolu: bellekte yalnizca
     # bakilan belge acik, digerleri yol + kaldigi yer; liste de sinirli
@@ -422,6 +429,12 @@ VARSAYILAN_AYAR = {
     "tepsi":          False,
     "windows-basligi": False,      # Windows'un beyaz baslik cubugu
 
+    # --- tex modu (T): bir yanda .tex kaynagi, yaninda canli PDF ---
+    "tex-motoru":     "pdflatex",  # pdflatex | xelatex | lualatex (PATH'te olmali)
+    "tex-yan":        "sol",       # editor hangi yanda: sol | sag
+    "tex-oran":       50,          # editorun genisligi, tuval alaninin yuzdesi
+    "tex-gecikme":    800,         # yazmayi birakinca kac ms sonra derlesin; 0 = yalniz Ctrl-S
+
     # --- bicimler ---
     # Yer tutucular: {mod} {dosya} {ad} {yol} {sayfa} {toplam} {yuzde}
     #                {zoom} {sigdir} {sutun} {ters} {donme} {arama}
@@ -435,7 +448,7 @@ VARSAYILAN_AYAR = {
 KAPANAN_EN_COK = 10
 
 # Palette secim listesi acan komutlarin alt menu kipleri ("renk": vurgu renkleri)
-SECIM_KIPLERI = ("dil", "tema", "sinir", "renk", "yazici")
+SECIM_KIPLERI = ("dil", "tema", "sinir", "renk", "yazici", "tex")
 
 # Vurgu kalemi renkleri. "sari" temanin `vurgu-rengi`ni kullanir (tema
 # degisince doner), otekiler sabit: beyaz sayfada carpma karisimiyla okunur
@@ -505,6 +518,9 @@ VARSAYILAN_TUSLAR = {
     # S: sayfa duzeni (kucuk resimler; tasi, sil, dondur, ayir). X: karartma
     # kalemi - x'in buyugu, "ustunu ciz". Ikisi de yeni dosyaya yazar.
     "S": "sayfa-duzeni",    "X": "karartma-kalemi",
+    # T: tex modu (kapaliysa acar, aciksa editore gecer). <C-c>: Shift+surukle
+    # ile secilen metni panoya koyar; `y` renk tusu oldugu icin yank degil.
+    "T": "tex-modu",        "<C-c>": "kopyala",
     "M": "yer-imi-koy",     "b": "yer-imleri",
     # <C-S-p> degil: birden cok klavye dili kuruluyken Windows Ctrl+Shift'i
     # dil degistirmeye ayirabiliyor (bkz. yukarida <C-e>).
@@ -556,7 +572,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "yakinlastirma-sifirla": "actual size (100%)",
         "dondur":         "rotate 90 degrees",
         "cift-sayfa":     "toggle single / double page layout",
-        "ters-renk":      "night mode: invert colors",
+        "ters-renk":      "night mode: recolor pages to the theme",
 
         "icindekiler":    "table of contents - j k Enter Esc",
         "eylemler":       "action palette: commands and key bindings",
@@ -589,6 +605,10 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "karartma-kalemi": "redact pen: drag a box or click a word, Enter writes the redacted copy",
         "karartmayi-uygula": "write the redacted copy now (<name>-redacted.pdf, text really removed)",
         "ustveri-temizle": "strip metadata: author, software, dates, XMP (<name>-clean.pdf)",
+        "kopyala":        "copy the selected text (shift+drag) to the clipboard",
+        "tex-modu":       "tex mode: .tex source beside its live PDF (again: focus the editor)",
+        "tex-derle":      "save and compile the .tex now",
+        "tex-kapat":      "close tex mode (the source is saved)",
 
         "ac":             "pick a file and open it",
         "yeniden-yukle":  "reload the document from disk",
@@ -635,7 +655,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "yakinlastirma-sifirla": "gerçek boyut (%100)",
         "dondur":         "90 derece döndür",
         "cift-sayfa":     "tek / çift sayfa düzeni arasında geçiş",
-        "ters-renk":      "gece modu: renkleri ters çevir",
+        "ters-renk":      "gece modu: sayfayı temanın renklerine boya",
 
         "icindekiler":    "içindekiler paneli - j k Enter Esc",
         "eylemler":       "eylem paleti: komutlar ve tuş atama",
@@ -668,6 +688,10 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "karartma-kalemi": "karartma kalemi: kutu sürükle ya da kelimeye tıkla, Enter karartılmış kopyayı yazar",
         "karartmayi-uygula": "karartılmış kopyayı şimdi yaz (<ad>-karartilmis.pdf, metin gerçekten silinir)",
         "ustveri-temizle": "üstverileri sil: yazar, program, tarihler, XMP (<ad>-temiz.pdf)",
+        "kopyala":        "seçili metni (shift+sürükle) panoya kopyala",
+        "tex-modu":       "tex modu: .tex kaynağı yanında canlı PDF (yine basınca: editöre geç)",
+        "tex-derle":      ".tex'i kaydet ve şimdi derle",
+        "tex-kapat":      "tex modunu kapat (kaynak kaydedilir)",
 
         "ac":             "dosya seçip aç",
         "yeniden-yukle":  "belgeyi diskten yeniden oku",
@@ -714,7 +738,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "yakinlastirma-sifirla": "Originalgröße (100%)",
         "dondur":         "um 90 Grad drehen",
         "cift-sayfa":     "zwischen Einzel- und Doppelseite wechseln",
-        "ters-renk":      "Nachtmodus: Farben invertieren",
+        "ters-renk":      "Nachtmodus: Seiten in Themenfarben umfärben",
 
         "icindekiler":    "Inhaltsverzeichnis - j k Enter Esc",
         "eylemler":       "Aktionspalette: Befehle und Tastenbelegung",
@@ -747,6 +771,10 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "karartma-kalemi": "Schwärzstift: Rahmen ziehen oder Wort klicken, Enter schreibt die geschwärzte Kopie",
         "karartmayi-uygula": "geschwärzte Kopie jetzt schreiben (<Name>-geschwaerzt.pdf, Text wirklich entfernt)",
         "ustveri-temizle": "Metadaten entfernen: Autor, Programm, Daten, XMP (<Name>-bereinigt.pdf)",
+        "kopyala":        "markierten Text (Shift+Ziehen) in die Zwischenablage kopieren",
+        "tex-modu":       "TeX-Modus: .tex-Quelltext neben dem Live-PDF (nochmal: zum Editor)",
+        "tex-derle":      ".tex speichern und jetzt kompilieren",
+        "tex-kapat":      "TeX-Modus schließen (Quelltext wird gespeichert)",
 
         "ac":             "Datei auswählen und öffnen",
         "yeniden-yukle":  "Dokument neu von der Festplatte laden",
@@ -793,12 +821,13 @@ KOMUT_GRUPLARI = [
     ("isaret ve ziplama", ["isaret-koy", "isarete-git", "yer-imi-koy", "yer-imleri",
                            "geri-zipla", "ileri-zipla"]),
     ("vurgu", ["vurgu-kalemi", "vurgular", "vurgu-geri-al", "vurgulari-aktar",
-               "not-ekle", "geri-getir", "silme-kipi"]),
+               "not-ekle", "geri-getir", "silme-kipi", "kopyala"]),
     ("dosya", ["ac", "belgeler", "sonraki-belge", "onceki-belge", "belgeyi-kapat",
                "kapanani-ac", "yeniden-yukle", "yazdir", "yazdir-sec", "komut-modu",
                "cik"]),
     ("pdf araclari", ["sayfa-duzeni", "birlestir", "karartma-kalemi",
                       "karartmayi-uygula", "ustveri-temizle"]),
+    ("tex", ["tex-modu", "tex-derle", "tex-kapat"]),
     ("bolmeler", ["bolme-saga", "bolme-sola", "bolme-gec", "bolme-tek"]),
     ("ayarlar", ["geri-acma-siniri", "yazici", "tepsi"]),
     # Temalar gibi: palette tek satir, Enter renk listesini acar; tusu yok.
@@ -812,18 +841,18 @@ GRUP_ADLARI: dict[str, dict[str, str]] = {
     "en": {"gezinme": "navigation", "yakinlastirma ve duzen": "zoom and layout",
            "ekran": "display", "arama": "search", "isaret ve ziplama": "marks and jumps",
            "vurgu": "highlights", "dosya": "file", "ayarlar": "settings", "temalar": "themes", "bolmeler": "panes",
-           "pdf araclari": "pdf tools",
+           "pdf araclari": "pdf tools", "tex": "tex",
            "vurgu renkleri": "highlight colours"},
     "tr": {"gezinme": "gezinme", "yakinlastirma ve duzen": "yakınlaştırma ve düzen",
            "ekran": "ekran", "arama": "arama", "isaret ve ziplama": "işaret ve zıplama",
            "vurgu": "vurgu", "dosya": "dosya", "ayarlar": "ayarlar", "temalar": "temalar",
-           "bolmeler": "bölmeler", "pdf araclari": "pdf araçları",
+           "bolmeler": "bölmeler", "pdf araclari": "pdf araçları", "tex": "tex",
            "vurgu renkleri": "vurgu renkleri"},
     "de": {"gezinme": "Navigation", "yakinlastirma ve duzen": "Zoom und Layout",
            "ekran": "Anzeige", "arama": "Suche", "isaret ve ziplama": "Marken und Sprünge",
            "vurgu": "Markierungen", "dosya": "Datei", "ayarlar": "Einstellungen",
            "temalar": "Themen", "vurgu renkleri": "Markerfarben", "bolmeler": "Bereiche",
-           "pdf araclari": "PDF-Werkzeuge"},
+           "pdf araclari": "PDF-Werkzeuge", "tex": "TeX"},
 }
 
 # Arayuzun geri kalan metni. Ikili deger (tekil, cogul): hangisi oldugunu
@@ -931,8 +960,31 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "yer_imi_yok":      "no bookmarks  ({tus}: bookmark this spot)",
         "yer_imi_var":      "already bookmarked here: {ad}",
         "mod_yer_imleri":   "[bookmarks]",
-        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   esc: drop",
+        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   ^c: copy   esc: drop",
         "secim_birakildi":  "selection dropped",
+        "kopyalandi":       "copied: \"{metin}\"",
+        "kopyalanacak_yok": "nothing to copy - shift+drag over the text first",
+        "gece_modu_durum":  "night mode: {durum}",
+        "tex_sec":          "open a .tex file",
+        "tex_menu_baslik":  "tex",
+        "tex_yeni":         "new file",
+        "tex_dosya_ac":     "open a file",
+        "tex_yeni_baslik":  "new .tex file",
+        "tex_acildi":       "tex: {ad} - ctrl-s compiles, esc goes to the pdf, T comes back",
+        "tex_kapandi":      "tex mode closed, {ad} saved",
+        "tex_kapali":       "tex mode is off (T opens it)",
+        "tex_motor_yok":    "{motor} not found - install MiKTeX / TeX Live or :set tex-motoru",
+        "tex_derleniyor":   "[compiling]",
+        "tex_tamam":        "[ok {sn}s]",
+        "tex_hatali":       "[error l.{satir}]",
+        "tex_hatali_satirsiz": "[error]",
+        "tex_kirli":        "[modified]",
+        "tex_hata":         "latex: {dosya}:{satir}: {ileti}",
+        "tex_hata_satirsiz": "latex: {ileti}",
+        "tex_derlendi":     "tex: compiled in {sn}s -> {ad}",
+        "tex_zaman_asimi":  "latex ran over {sn}s, stopped",
+        "tex_yazilamadi":   "couldn't write {ad}: {e}",
+        "tex_pdf_kilitli":  "couldn't update {ad} ({e}) - open in another program?",
         "renk_baslik":      "highlight colours",
         "renk_zaten":       "{tus} already paints {renk}",
         "renk_catisma":     "! {tus} currently paints {renk}, it will be taken from there",
@@ -1151,8 +1203,31 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "yer_imi_yok":      "yer imi yok  ({tus}: buraya yer imi koy)",
         "yer_imi_var":      "burada zaten yer imi var: {ad}",
         "mod_yer_imleri":   "[yer imleri]",
-        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   esc: bırak",
+        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   ^c: kopyala   esc: bırak",
         "secim_birakildi":  "seçim bırakıldı",
+        "kopyalandi":       "kopyalandı: \"{metin}\"",
+        "kopyalanacak_yok": "kopyalanacak bir şey yok - önce shift+sürükle ile seç",
+        "gece_modu_durum":  "gece modu: {durum}",
+        "tex_sec":          ".tex dosyası aç",
+        "tex_menu_baslik":  "tex",
+        "tex_yeni":         "yeni dosya",
+        "tex_dosya_ac":     "dosya aç",
+        "tex_yeni_baslik":  "yeni .tex dosyası",
+        "tex_acildi":       "tex: {ad} - ctrl-s derler, esc pdf'e geçer, T geri getirir",
+        "tex_kapandi":      "tex modu kapandı, {ad} kaydedildi",
+        "tex_kapali":       "tex modu kapalı (T açar)",
+        "tex_motor_yok":    "{motor} bulunamadı - MiKTeX / TeX Live kur ya da :set tex-motoru",
+        "tex_derleniyor":   "[derleniyor]",
+        "tex_tamam":        "[tamam {sn}sn]",
+        "tex_hatali":       "[hata s.{satir}]",
+        "tex_hatali_satirsiz": "[hata]",
+        "tex_kirli":        "[değişti]",
+        "tex_hata":         "latex: {dosya}:{satir}: {ileti}",
+        "tex_hata_satirsiz": "latex: {ileti}",
+        "tex_derlendi":     "tex: {sn}sn'de derlendi -> {ad}",
+        "tex_zaman_asimi":  "latex {sn}sn'yi aştı, durduruldu",
+        "tex_yazilamadi":   "{ad} yazılamadı: {e}",
+        "tex_pdf_kilitli":  "{ad} güncellenemedi ({e}) - başka bir programda mı açık?",
         "renk_baslik":      "vurgu renkleri",
         "renk_zaten":       "{tus} zaten {renk} boyuyor",
         "renk_catisma":     "! {tus} şu an {renk} boyuyor, ondan alınacak",
@@ -1372,8 +1447,31 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "yer_imi_yok":      "keine Lesezeichen  ({tus}: Lesezeichen hier setzen)",
         "yer_imi_var":      "hier ist schon ein Lesezeichen: {ad}",
         "mod_yer_imleri":   "[Lesezeichen]",
-        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   esc: verwerfen",
+        "secim_bekliyor":   "\"{metin}\"  ->  enter: {varsayilan}   {tuslar}   ^c: kopieren   esc: verwerfen",
         "secim_birakildi":  "Auswahl verworfen",
+        "kopyalandi":       "kopiert: \"{metin}\"",
+        "kopyalanacak_yok": "nichts zu kopieren - erst mit Shift+Ziehen auswählen",
+        "gece_modu_durum":  "Nachtmodus: {durum}",
+        "tex_sec":          ".tex-Datei öffnen",
+        "tex_menu_baslik":  "TeX",
+        "tex_yeni":         "neue Datei",
+        "tex_dosya_ac":     "Datei öffnen",
+        "tex_yeni_baslik":  "neue .tex-Datei",
+        "tex_acildi":       "tex: {ad} - Strg-S kompiliert, Esc geht zum PDF, T zurück",
+        "tex_kapandi":      "TeX-Modus geschlossen, {ad} gespeichert",
+        "tex_kapali":       "TeX-Modus ist aus (T öffnet ihn)",
+        "tex_motor_yok":    "{motor} nicht gefunden - MiKTeX / TeX Live installieren oder :set tex-motoru",
+        "tex_derleniyor":   "[kompiliert]",
+        "tex_tamam":        "[ok {sn}s]",
+        "tex_hatali":       "[Fehler Z.{satir}]",
+        "tex_hatali_satirsiz": "[Fehler]",
+        "tex_kirli":        "[geändert]",
+        "tex_hata":         "latex: {dosya}:{satir}: {ileti}",
+        "tex_hata_satirsiz": "latex: {ileti}",
+        "tex_derlendi":     "tex: in {sn}s kompiliert -> {ad}",
+        "tex_zaman_asimi":  "latex lief über {sn}s, gestoppt",
+        "tex_yazilamadi":   "{ad} konnte nicht geschrieben werden: {e}",
+        "tex_pdf_kilitli":  "{ad} nicht aktualisiert ({e}) - in einem anderen Programm offen?",
         "renk_baslik":      "Markerfarben",
         "renk_zaten":       "{tus} markiert schon {renk}",
         "renk_catisma":     "! {tus} markiert gerade {renk} und wird dort entfernt",
@@ -1567,6 +1665,8 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sayfa-duzeni": "organize-pages", "birlestir": "merge",
         "karartma-kalemi": "redact-pen", "karartmayi-uygula": "apply-redaction",
         "ustveri-temizle": "strip-metadata",
+        "kopyala": "copy", "tex-modu": "tex", "tex-derle": "tex-compile",
+        "tex-kapat": "tex-close",
         "ac": "open-file", "yeniden-yukle": "reload", "komut-modu": "command-line",
         "cik": "quit",
         "sonraki-belge": "next-doc", "onceki-belge": "prev-doc",
@@ -1605,6 +1705,8 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sayfa-duzeni": "sayfa-düzeni", "birlestir": "birleştir",
         "karartma-kalemi": "karartma-kalemi", "karartmayi-uygula": "karartmayı-uygula",
         "ustveri-temizle": "üstveri-temizle",
+        "kopyala": "kopyala", "tex-modu": "tex-modu", "tex-derle": "tex-derle",
+        "tex-kapat": "tex-kapat",
         "ac": "aç", "yeniden-yukle": "yeniden-yükle", "komut-modu": "komut-satırı",
         "cik": "çık",
         "sonraki-belge": "sonraki-belge", "onceki-belge": "önceki-belge",
@@ -1644,6 +1746,8 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sayfa-duzeni": "seiten-ordnen", "birlestir": "zusammenfügen",
         "karartma-kalemi": "schwärzstift", "karartmayi-uygula": "schwärzung-anwenden",
         "ustveri-temizle": "metadaten-entfernen",
+        "kopyala": "kopieren", "tex-modu": "tex-modus", "tex-derle": "tex-kompilieren",
+        "tex-kapat": "tex-schließen",
         "ac": "öffnen", "yeniden-yukle": "neu-laden", "komut-modu": "befehlszeile",
         "cik": "beenden",
         "sonraki-belge": "nächstes-dokument", "onceki-belge": "voriges-dokument",
@@ -1872,6 +1976,21 @@ def capa_etiketleri(metin: str) -> tuple[list[str], str | None]:
         return [], m.group(1)
     m = _CAPA_YAZAR.search(t)
     return ([], m.group(1)) if m else ([], None)
+
+
+# Tex modunda yeni dosyanin ilk hali ve derlemenin ust siniri (sn).
+# Govdede bir satir olmali: bos belgeden latex PDF uretmiyor ("No pages of output").
+TEX_SABLONU = "\\documentclass{article}\n\\begin{document}\n\nHello, world.\n\n\\end{document}\n"
+TEX_ZAMAN_ASIMI = 90
+# -file-line-error bicimi: "./ana.tex:12: Undefined control sequence."
+_TEX_HATA = re.compile(r"^(.*?\.\w+):(\d+): (.*)$", re.M)
+# Satir satir boyama; sira onemli, sonraki oncekinin ustune biner.
+_TEX_DESENLER = (
+    ("tex_parantez", re.compile(r"[{}\[\]]")),
+    ("tex_mat", re.compile(r"\$\$.*?\$\$|\$(?:\\.|[^$\\])+\$")),
+    ("tex_komut", re.compile(r"\\(?:[A-Za-z@]+\*?|.)")),
+    ("tex_yorum", re.compile(r"(?<!\\)%.*")),
+)
 
 
 def veri_dizini() -> str:
@@ -2126,6 +2245,10 @@ class Rubric(tk.Tk):
         # q ile kapatilanlar, en yenisi sonda: {yol, sira, konum, zoom, sigdir}
         self.kapananlar: list[dict] = []
         self.ters: bool = bool(self.ayar["ters-renk"])
+        # tex modu (T): acikken {yol, kodlama, ...}; editor parcalari ilk
+        # acilista kurulur (bkz. _tex_arayuzu_kur)
+        self.tex: dict | None = None
+        self.tex_metin: tk.Text | None = None
         self._boyut_isi = None             # pencere boyu durulunca yenile
         self._ipc_isi = None               # tek-pencere kuyruk yoklamasi
         # --- tepsi modu (bkz. _tepsi_kur) ---
@@ -2540,6 +2663,8 @@ class Rubric(tk.Tk):
         ):
             w.config(**secenek)
         self._bolmeleri_boya()
+        if self.tex_metin is not None:
+            self._tex_renkleri()
         self._durum_yazili = None          # durum satiri yeni renkle yeniden yazilsin
 
     def _tuval_baglari(self, bolme: Bolme) -> None:
@@ -2621,6 +2746,9 @@ class Rubric(tk.Tk):
 
     def belgeyi_ac(self, yol: str) -> None:
         yol = os.path.abspath(os.path.expanduser(yol.strip().strip('"')))
+        if yol.lower().endswith(".tex"):          # kaynak: yaninda PDF'iyle tex modu
+            self.tex_ac(yol)
+            return
         if not os.path.exists(yol):
             self.bildir(self.m("bulunamadi", ne=yol), "hata")
             return
@@ -2843,6 +2971,16 @@ class Rubric(tk.Tk):
         for b in self.bolmeler:
             b.cerceve.pack_forget()
         self.bolme_cizgi.pack_forget()
+        if self.tex_metin is not None:
+            self.tex_cerceve.pack_forget()
+            self.tex_cizgi.pack_forget()
+        if self.tex:
+            # Editor once yerlesir, sabit genislikte; bolmeler kalani paylasir.
+            yan = "right" if str(self.ayar["tex-yan"]).strip().lower() in ("sag", "sağ", "right") \
+                else "left"
+            self.tex_cerceve.config(width=self._tex_genisligi())
+            self.tex_cerceve.pack(side=yan, fill="y")
+            self.tex_cizgi.pack(side=yan, fill="y")
         for i, b in enumerate(self.bolmeler):
             if i:
                 self.bolme_cizgi.pack(side="left", fill="y")
@@ -3577,13 +3715,22 @@ class Rubric(tk.Tk):
         return m
 
     def sayfa_resmi(self, no: int) -> tk.PhotoImage | None:
-        anahtar = (no, round(self.zoom, 4), self.donme, self.ters)
+        gece = self._gece_renkleri() if self.ters else None
+        anahtar = (no, round(self.zoom, 4), self.donme, self.ters, gece)
         if anahtar in self.onbellek:
             self.onbellek.move_to_end(anahtar)
             return self.onbellek[anahtar]
         try:
-            pix = self.belge[no].get_pixmap(matrix=self.sayfa_matrisi(), alpha=False)
-            if self.ters:
+            if gece:
+                # gri tonla, sonra siyah -> yazi rengi, beyaz -> zemin (R=G=B
+                # oldugu icin tint_with'in kanal kanal eslemesi tam bir gecis)
+                gri = self.belge[no].get_pixmap(matrix=self.sayfa_matrisi(),
+                                                colorspace=pymupdf.csGRAY, alpha=False)
+                pix = pymupdf.Pixmap(pymupdf.csRGB, gri)
+                pix.tint_with(*gece)
+            else:
+                pix = self.belge[no].get_pixmap(matrix=self.sayfa_matrisi(), alpha=False)
+            if self.ters and not gece:
                 pix.invert_irect(pix.irect)
             resim = tk.PhotoImage(master=self, data=pix.tobytes("ppm"))
         except Exception as e:
@@ -4671,6 +4818,18 @@ class Rubric(tk.Tk):
         self.bildir(self.m("secim_bekliyor", metin=kisa,
                            varsayilan=self.renk_adi(self.vurgu_varsayilani()),
                            tuslar=tuslar), "vurgu")
+
+    def kopyala(self) -> None:
+        """<C-c>: renk bekleyen secimin (Shift+surukle) metni panoya. Secim
+        yerinde kalir; ardindan yine boyanabilir ya da Esc ile birakilir."""
+        b = self._bekleyen_vurgu
+        if not b or not b.get("metin"):
+            self.bildir(self.m("kopyalanacak_yok"), "uyari")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(b["metin"])
+        kisa = b["metin"] if len(b["metin"]) <= 48 else b["metin"][:45] + "..."
+        self.bildir(self.m("kopyalandi", metin=kisa), "vurgu")
 
     def _bekleyeni_ciz(self) -> None:
         """Renk bekleyen secim: vurgu-rengi taramali, cercevesi arayuz vurgusunda
@@ -6083,7 +6242,7 @@ class Rubric(tk.Tk):
             self.alt_menuyu_kapat()
             {"dil": self.dili_ayarla, "tema": self.tema_uygula,
              "sinir": self.kapanan_siniri_ayarla, "renk": self.renk_tusu_sor,
-             "yazici": self.yaziciyi_ayarla}[kip](secim)
+             "yazici": self.yaziciyi_ayarla, "tex": self._tex_sec}[kip](secim)
         else:
             {"calistir": self.palet_calistir, "tus-ata": self.tus_ata,
              "tus-kaldir": self.tusu_kaldir, "varsayilan": self.varsayilana_don}[secim]()
@@ -6478,6 +6637,8 @@ class Rubric(tk.Tk):
             self.disa_aktar(arg)
         elif katla(ad) in ("redact", "karart", "schwarzen", "schwaerzen"):
             self.karart_ara(arg)
+        elif ad == "tex" and arg:
+            self.tex_ac(arg)
         elif ad == "info":
             self.bilgi()
         elif ad == "toc":
@@ -6539,6 +6700,10 @@ class Rubric(tk.Tk):
             "karartma-kalemi": self.karartma_kalemi_degistir,
             "karartmayi-uygula": self.karartmayi_uygula,
             "ustveri-temizle": self.ustveri_temizle,
+            "kopyala":      self.kopyala,
+            "tex-modu":     self.tex_modu,
+            "tex-derle":    self.tex_derle,
+            "tex-kapat":    self.tex_kapat,
             "ara-ileri":    lambda: self.komut_modu("/"),
             "ara-geri":     lambda: self.komut_modu("?"),
             "sonraki-bulgu": lambda: self.bulguya_git(self.arama_yonu),
@@ -6685,11 +6850,20 @@ class Rubric(tk.Tk):
         self.donme = (self.donme + 90) % 360
         self.yenile()
 
+    def _gece_renkleri(self) -> tuple[int, int] | None:
+        """`gece-modu tema` icin (siyahin, beyazin) yeni rengi; `ters` ise None."""
+        if str(self.ayar["gece-modu"]).strip().lower() in ("ters", "invert", "umkehren"):
+            return None
+        try:
+            return int(self.ayar["cubuk-on"].lstrip("#"), 16), int(self.ayar["zemin"].lstrip("#"), 16)
+        except (ValueError, AttributeError):
+            return None
+
     def ters_renk(self) -> None:
         self.ters = not self.ters
         self.yenile()
-        self.bildir(self.m("ters_renk_durum", durum=self.m("acik" if self.ters else "kapali")),
-                    "vurgu")
+        anahtar = "gece_modu_durum" if self._gece_renkleri() else "ters_renk_durum"
+        self.bildir(self.m(anahtar, durum=self.m("acik" if self.ters else "kapali")), "vurgu")
 
     def cift_sayfa(self) -> None:
         self.sutunlar = 1 if self.sutunlar > 1 else 2
@@ -6866,12 +7040,456 @@ class Rubric(tk.Tk):
         # sonuncusu acilir; digerleri <C-Left>/<C-Right> ile.
         yollar = filedialog.askopenfilenames(
             title=self.m("ac_baslik"),
-            filetypes=[(self.m("ac_belgeler"), "*.pdf *.epub *.xps *.cbz *.mobi *.fb2"),
-                       ("PDF", "*.pdf"), (self.m("ac_tumu"), "*.*")],
+            filetypes=[(self.m("ac_belgeler"), "*.pdf *.epub *.xps *.cbz *.mobi *.fb2 *.tex"),
+                       ("PDF", "*.pdf"), ("TeX", "*.tex"), (self.m("ac_tumu"), "*.*")],
         )
+        tex = [y for y in yollar if y.lower().endswith(".tex")]
+        yollar = [y for y in yollar if not y.lower().endswith(".tex")]
         self._arkadakileri_ekle(list(yollar))
         if yollar:
             self.belgeyi_ac(yollar[-1])
+        if tex:                                   # .tex listeye girmez, tex modunda acilir
+            self.tex_ac(tex[-1])
+
+    # -- tex modu (T) ------------------------------------------------------
+    #
+    # Tuval alaninin bir yaninda .tex kaynagi (tk.Text), kalaninda bolmeler.
+    # Yazmayi `tex-gecikme` ms birakinca kaynak kaydedilir ve derlenir; Ctrl-S
+    # hemen derler. latex `%LOCALAPPDATA%\rubric\tex\` altindaki kendi dizininde
+    # calisir (aux / log kaynagin yanini kirletmesin); basariliysa PDF kaynagin
+    # yanina `<ad>.pdf` olarak kopyalanir ve onu gosteren bolme kaldigi yerden
+    # yeniden yuklenir. Hata varsa eski PDF durur, satir numarasi kizarir.
+    #
+    # Kopyalamadan once PDF kapatilir: MuPDF dosyayi acik tutuyor, ustune
+    # yazilirken okumak da yazmak da bozulurdu.
+    #
+    # Editorde vim tuslari yok, duz yazi: tus_geldi odak editordeyken hicbir
+    # tusu almaz. Esc PDF'e gecer, T geri getirir, Ctrl-W modu kapatir.
+
+    def tex_modu(self) -> None:
+        """T: kapaliysa "yeni dosya / dosya ac" secimini sorar (kullanici
+        istegi, 2026-09-23: PDF'in yanindaki .tex'i kendiliginden aramasin),
+        aciksa editore gecer."""
+        if self.tex:
+            self.tex_metin.focus_set()
+            return
+        if self.mod != "palet":
+            self.eylemler()
+        self._palet_komuta_git("tex-modu")
+        self.palet_kip = "tex"
+        self.alt_menu_ac(self.m("tex_menu_baslik"),
+                         [(f"> {self.m('tex_yeni')}", ""), (f"> {self.m('tex_dosya_ac')}", "")],
+                         ["yeni", "ac"])
+
+    def _tex_sec(self, secim: str) -> None:
+        """Secim menusunden: yeni dosya (nereye kaydedilecegi sorulur, sablonla
+        yaratilir) ya da var olan bir .tex. Ikisinde de dosyanin yeri bastan
+        belli: canli derleme hem .tex'i hem PDF'i hep diske yazar."""
+        self.paleti_kapat()
+        dizin = os.path.dirname(self.pdf_yolu) if self.pdf_yolu else os.path.expanduser("~")
+        if secim == "yeni":
+            yol = filedialog.asksaveasfilename(
+                title=self.m("tex_yeni_baslik"), initialdir=dizin, initialfile="yeni.tex",
+                defaultextension=".tex", filetypes=[("TeX", "*.tex")])
+        else:
+            yol = filedialog.askopenfilename(
+                title=self.m("tex_sec"), initialdir=dizin,
+                filetypes=[("TeX", "*.tex"), (self.m("ac_tumu"), "*.*")])
+        if yol:
+            self.tex_ac(yol)
+
+    def tex_ac(self, yol: str) -> None:
+        """`yol`daki .tex'i editore alir (yoksa sablonla yaratir), PDF'ini acar."""
+        yol = os.path.abspath(os.path.expanduser(yol.strip().strip('"')))
+        if not yol.lower().endswith(".tex"):
+            yol += ".tex"
+        if self.tex:
+            if self._ayni_yol(self.tex["yol"], yol):
+                self.tex_metin.focus_set()
+                return
+            self._tex_durdur()
+        try:
+            if os.path.exists(yol):
+                with open(yol, "rb") as f:
+                    ham = f.read()
+            else:
+                ham = TEX_SABLONU.encode("utf-8")
+                with open(yol, "wb") as f:
+                    f.write(ham)
+        except OSError as e:
+            self.bildir(self.m("tex_yazilamadi", ad=os.path.basename(yol), e=e), "hata")
+            return
+        # Kodlama korunur: utf-8 degilse ayni kodlamayla geri yazilir.
+        kodlama = "utf-8-sig" if ham.startswith(b"\xef\xbb\xbf") else "utf-8"
+        for k in (kodlama, "cp1254", "latin-1"):
+            try:
+                metin = ham.decode(k)
+                kodlama = k
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if self.tex_metin is None:
+            self._tex_arayuzu_kur()
+        self.tex = {"yol": yol, "kodlama": kodlama,
+                    "satir_sonu": "\r\n" if b"\r\n" in ham else "\n",
+                    "kirli": False, "isi": None, "boya_isi": None, "surec": None,
+                    "bekliyor": False, "basla": 0.0, "durum": None, "hata_satiri": None,
+                    "bolme": self.bolme}
+        m = self.tex_metin
+        m.delete("1.0", "end")
+        m.insert("1.0", metin.replace("\r\n", "\n"))
+        m.edit_reset()
+        m.edit_modified(False)
+        m.mark_set("insert", "1.0")
+        m.see("insert")
+        self._tex_renkleri()
+        self._tex_boya()
+        self._bolmeleri_yerlestir()
+        self.yenile()
+
+        hedef = self._tex_pdf_yolu()
+        if os.path.exists(hedef) and not any(b.belge and self._ayni_yol(b.pdf_yolu, hedef)
+                                             for b in self.bolmeler):
+            self.belgeyi_ac(hedef)
+        # PDF yoksa ya da kaynaktan eskiyse hemen derle
+        if not os.path.exists(hedef) or os.path.getmtime(hedef) < os.path.getmtime(yol):
+            self.tex_derle()
+        self._tex_basligi()
+        m.focus_set()
+        self.bildir(self.m("tex_acildi", ad=os.path.basename(yol)), "vurgu")
+
+    def _tex_arayuzu_kur(self) -> None:
+        """Editorun parcalari: baslik satiri, satir numaralari, metin."""
+        self.tex_cerceve = tk.Frame(self.tuval_alani, bd=0)
+        self.tex_cerceve.pack_propagate(False)       # genislik ayardan, icerikten degil
+        self.tex_cizgi = tk.Frame(self.tuval_alani, width=1, bd=0)   # tam 1 px ayirici
+        self.tex_ust = tk.Label(self.tex_cerceve, anchor="w", bd=0, padx=8, pady=3)
+        self.tex_ust.pack(side="top", fill="x")
+        self.tex_ic = tk.Frame(self.tex_cerceve, bd=0)
+        self.tex_ic.pack(side="top", fill="both", expand=True)
+        self.tex_numara = tk.Canvas(self.tex_ic, bd=0, highlightthickness=0, takefocus=False)
+        self.tex_numara.pack(side="left", fill="y")
+        self.tex_metin = tk.Text(self.tex_ic, bd=0, highlightthickness=0, undo=True,
+                                 maxundo=-1, wrap="word", padx=6, pady=4, width=1, height=1,
+                                 insertwidth=2, exportselection=False,
+                                 yscrollcommand=lambda *_: self._tex_numaralari_ciz())
+        self.tex_metin.pack(side="left", fill="both", expand=True)
+        m = self.tex_metin
+        m.bind("<<Modified>>", self._tex_degisti)
+        m.bind("<Control-s>", self.tex_derle)
+        m.bind("<Control-S>", self.tex_derle)
+        m.bind("<Control-w>", self.tex_kapat)
+        m.bind("<Escape>", lambda e: (self.tuval.focus_set(), "break")[1])
+        m.bind("<Tab>", lambda e: (m.insert("insert", "  "), "break")[1])
+        m.bind("<Configure>", lambda e: self._tex_numaralari_ciz())
+        self.tuval_alani.bind("<Configure>", self._tex_olcu_degisti)
+
+    def _tex_genisligi(self) -> int:
+        try:
+            oran = max(15, min(85, int(self.ayar["tex-oran"])))
+        except (TypeError, ValueError):
+            oran = 50
+        w = self.tuval_alani.winfo_width()
+        if w <= 1:
+            w = self.winfo_width()
+        return max(120, w * oran // 100)
+
+    def _tex_olcu_degisti(self, _olay=None) -> None:
+        if self.tex and int(self.tex_cerceve.cget("width")) != self._tex_genisligi():
+            self.tex_cerceve.config(width=self._tex_genisligi())
+
+    def _tex_renkleri(self) -> None:
+        a = self.ayar
+        yt = (a["yazitipi"], a["yazitipi-boy"])
+        olcu = tkfont.Font(self, font=yt)
+        zemin = a["panel-zemin"]
+        self.tex_cerceve.config(bg=zemin)
+        self.tex_ic.config(bg=zemin)
+        self.tex_cizgi.config(bg=a["palet-cerceve"])
+        self.tex_ust.config(bg=a["cubuk-zemin"], font=yt)
+        self.tex_numara.config(bg=zemin, width=olcu.measure("0000") + 10)
+        self.tex_metin.config(bg=zemin, fg=a["cubuk-on"], insertbackground=a["vurgu"],
+                              selectbackground=a["panel-secili"], selectforeground=a["vurgu"],
+                              inactiveselectbackground=a["panel-secili"], font=yt,
+                              tabs=(olcu.measure("    "),))
+        m = self.tex_metin
+        m.tag_config("tex_komut", foreground=a["vurgu"])
+        m.tag_config("tex_mat", foreground=a["uyari"])
+        m.tag_config("tex_parantez", foreground=a["sonuk"])
+        m.tag_config("tex_yorum", foreground=a["sonuk"])
+        m.tag_config("tex_hata", background=a["panel-secili"])
+        self._tex_basligi()
+        self._tex_numaralari_ciz()
+
+    def _tex_basligi(self) -> None:
+        t = self.tex
+        if not t or self.tex_metin is None:
+            return
+        a = self.ayar
+        durum, renk = "", a["cubuk-on"]
+        if t["surec"] is not None:
+            durum, renk = self.m("tex_derleniyor"), a["uyari"]
+        elif t["durum"] and t["durum"][0] == "hata":
+            satir = t["durum"][1]
+            durum = self.m("tex_hatali", satir=satir) if satir else self.m("tex_hatali_satirsiz")
+            renk = a["hata"]
+        elif t["durum"] and t["durum"][0] == "tamam":
+            durum = self.m("tex_tamam", sn=f"{t['durum'][1]:.1f}")
+        if t["kirli"] and t["surec"] is None:
+            durum = (self.m("tex_kirli") + " " + durum).strip()
+        self.tex_ust.config(text=f"$ tex  {os.path.basename(t['yol'])}  {durum}", fg=renk)
+
+    def _tex_numaralari_ciz(self) -> None:
+        """Gorunen satirlarin numaralari; hatali satir `hata` renginde."""
+        if self.tex_metin is None:
+            return
+        c, m, a = self.tex_numara, self.tex_metin, self.ayar
+        c.delete("all")
+        genislik = int(c.cget("width"))
+        hata = self.tex["hata_satiri"] if self.tex else None
+        yt = (a["yazitipi"], a["yazitipi-boy"])
+        i = m.index("@0,0")
+        while True:
+            d = m.dlineinfo(i)
+            if d is None:
+                break
+            no = int(i.split(".")[0])
+            c.create_text(genislik - 6, d[1], anchor="ne", text=str(no), font=yt,
+                          fill=a["hata"] if no == hata else a["sonuk"])
+            sonraki = m.index(f"{i}+1line")
+            if sonraki == i:
+                break
+            i = sonraki
+
+    def _tex_degisti(self, _olay=None) -> None:
+        m = self.tex_metin
+        if not self.tex or not m.edit_modified():
+            return
+        m.edit_modified(False)
+        t = self.tex
+        t["kirli"] = True
+        self._tex_basligi()
+        if t["boya_isi"] is None:
+            t["boya_isi"] = self.after(150, self._tex_boya)
+        if t["isi"] is not None:
+            self.after_cancel(t["isi"])
+            t["isi"] = None
+        try:
+            gecikme = int(self.ayar["tex-gecikme"])
+        except (TypeError, ValueError):
+            gecikme = 800
+        if gecikme > 0:
+            t["isi"] = self.after(gecikme, self.tex_derle)
+
+    def _tex_boya(self) -> None:
+        """Komut, matematik, yorum ve parantezleri satir satir boyar."""
+        if not self.tex:
+            return
+        self.tex["boya_isi"] = None
+        m = self.tex_metin
+        for etiket, _ in _TEX_DESENLER:
+            m.tag_remove(etiket, "1.0", "end")
+        for no, satir in enumerate(m.get("1.0", "end-1c").split("\n"), 1):
+            if not satir:
+                continue
+            for etiket, desen in _TEX_DESENLER:
+                for e in desen.finditer(satir):
+                    m.tag_add(etiket, f"{no}.{e.start()}", f"{no}.{e.end()}")
+        m.tag_raise("tex_yorum")
+
+    def _tex_pdf_yolu(self) -> str:
+        return os.path.splitext(self.tex["yol"])[0] + ".pdf"
+
+    def _tex_dizini(self) -> str:
+        """Kaynaga ozel derleme dizini; ayni adli iki .tex karismasin diye yolun ozeti."""
+        yol = self.tex["yol"]
+        ozet = hashlib.sha1(os.path.normcase(yol).encode("utf-8")).hexdigest()[:8]
+        ad = os.path.splitext(os.path.basename(yol))[0]
+        dizin = os.path.join(veri_dizini(), "tex", f"{ad}-{ozet}")
+        os.makedirs(dizin, exist_ok=True)
+        return dizin
+
+    def _tex_kaydet(self) -> bool:
+        t = self.tex
+        metin = self.tex_metin.get("1.0", "end-1c")
+        try:
+            with open(t["yol"], "w", encoding=t["kodlama"], newline=t["satir_sonu"]) as f:
+                f.write(metin)
+        except (OSError, UnicodeEncodeError) as e:
+            self.bildir(self.m("tex_yazilamadi", ad=os.path.basename(t["yol"]), e=e), "hata")
+            return False
+        t["kirli"] = False
+        self.tex_metin.edit_modified(False)   # kuyruktaki <<Modified>> yeniden kirletmesin
+        return True
+
+    def tex_derle(self, _olay=None) -> str:
+        """Kaydeder ve latex'i baslatir. Derleme surerken gelen istek sona
+        eklenir: biter bitmez bir kez daha derlenir."""
+        t = self.tex
+        if not t:
+            self.bildir(self.m("tex_kapali"), "uyari")
+            return "break"
+        if t["isi"] is not None:
+            self.after_cancel(t["isi"])
+            t["isi"] = None
+        if t["surec"] is not None:
+            t["bekliyor"] = True
+            return "break"
+        # <<Modified>> kuyrukta olabilir: bayraga da bak
+        if (t["kirli"] or self.tex_metin.edit_modified()) and not self._tex_kaydet():
+            return "break"
+        motor = str(self.ayar["tex-motoru"]).strip() or "pdflatex"
+        exe = shutil.which(motor)
+        if not exe:
+            self.bildir(self.m("tex_motor_yok", motor=motor), "hata")
+            return "break"
+        komut = [exe, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error",
+                 f"-output-directory={self._tex_dizini()}", os.path.basename(t["yol"])]
+        try:
+            t["surec"] = subprocess.Popen(
+                komut, cwd=os.path.dirname(t["yol"]), stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as e:
+            self.bildir(self.m("tex_hata_satirsiz", ileti=e), "hata")
+            return "break"
+        t["basla"] = time.monotonic()
+        self._tex_basligi()
+        self.after(120, self._tex_bekle)
+        return "break"
+
+    def _tex_bekle(self) -> None:
+        t = self.tex
+        if not t or t["surec"] is None:
+            return
+        kod = t["surec"].poll()
+        sure = time.monotonic() - t["basla"]
+        if kod is None:
+            if sure > TEX_ZAMAN_ASIMI:
+                t["surec"].kill()
+                t["surec"] = None
+                t["durum"] = ("hata", None)
+                self._tex_basligi()
+                self.bildir(self.m("tex_zaman_asimi", sn=TEX_ZAMAN_ASIMI), "hata")
+            else:
+                self.after(120, self._tex_bekle)
+            return
+        t["surec"] = None
+        ad = os.path.splitext(os.path.basename(t["yol"]))[0]
+        uretilen = os.path.join(self._tex_dizini(), ad + ".pdf")
+        if kod == 0 and os.path.exists(uretilen):
+            self._tex_hata_isaretle(None)
+            if self._tex_pdfi_guncelle(uretilen):
+                t["durum"] = ("tamam", sure)
+                self.bildir(self.m("tex_derlendi", sn=f"{sure:.1f}",
+                                   ad=os.path.basename(self._tex_pdf_yolu())), "vurgu")
+        else:
+            dosya, satir, ileti = self._tex_hatasi(os.path.join(self._tex_dizini(), ad + ".log"))
+            ana = dosya is None or os.path.basename(dosya) == os.path.basename(t["yol"])
+            self._tex_hata_isaretle(satir if ana else None)
+            t["durum"] = ("hata", satir if ana else None)
+            if satir:
+                self.bildir(self.m("tex_hata", dosya=os.path.basename(dosya or t["yol"]),
+                                   satir=satir, ileti=ileti), "hata")
+            else:
+                self.bildir(self.m("tex_hata_satirsiz", ileti=ileti or f"exit {kod}"), "hata")
+        self._tex_basligi()
+        if t["bekliyor"]:
+            t["bekliyor"] = False
+            self.tex_derle()
+
+    @staticmethod
+    def _tex_hatasi(log_yolu: str) -> tuple[str | None, int | None, str]:
+        """latex gunlugunden ilk hata: (dosya, satir, ileti). -file-line-error
+        satiri yoksa "! ..." satiri ve ardindaki "l.<n>" okunur."""
+        try:
+            with open(log_yolu, encoding="latin-1") as f:
+                log = f.read()
+        except OSError:
+            return None, None, ""
+        e = _TEX_HATA.search(log)
+        if e:
+            return e.group(1), int(e.group(2)), e.group(3).strip()
+        e = re.search(r"^! (.*)$", log, re.M)
+        if e:
+            satir = re.search(r"^l\.(\d+)", log[e.end():], re.M)
+            return None, int(satir.group(1)) if satir else None, e.group(1).strip()
+        return None, None, ""
+
+    def _tex_hata_isaretle(self, satir: int | None) -> None:
+        m = self.tex_metin
+        m.tag_remove("tex_hata", "1.0", "end")
+        self.tex["hata_satiri"] = satir
+        if satir:
+            m.tag_add("tex_hata", f"{satir}.0", f"{satir}.0 lineend+1c")
+        self._tex_numaralari_ciz()
+
+    def _tex_pdfi_guncelle(self, uretilen: str) -> bool:
+        """Derlenen PDF'i kaynagin yanina koyar; onu gosteren bolmeler kaldigi
+        yerden (ofset, zoom, sigdirma) yeniden yuklenir. Ilk derlemede PDF
+        hicbir bolmede acik degilse tex'in acildigi bolmede acilir."""
+        t = self.tex
+        hedef = self._tex_pdf_yolu()
+        acik = []
+        for b in self.bolmeler:
+            with self._bolmede(b):
+                if self.belge is not None and self._ayni_yol(self.pdf_yolu, hedef):
+                    acik.append((b, self.ofset(), self.zoom, self.sigdir))
+                    self.konumu_kaydet(diske=False)
+                    self.belge.close()
+                    self.belge = None
+        hata = None
+        try:
+            shutil.copyfile(uretilen, hedef)
+        except OSError as e:
+            hata = e
+        for b, yer, zoom, sigdir in acik:
+            with self._bolmede(b):
+                self.belgeyi_ac(hedef)
+                if self.belge is not None:
+                    self.zoom, self.sigdir = zoom, sigdir
+                    self.duzeni_hesapla()
+                    self.ofset_ata(yer, ciz=True)
+        if not acik and not hata and not t.get("gosterildi"):
+            bolme = t["bolme"] if t["bolme"] in self.bolmeler else self.bolme
+            with self._bolmede(bolme):
+                self.belgeyi_ac(hedef)
+        t["gosterildi"] = True
+        if hata:
+            self.bildir(self.m("tex_pdf_kilitli", ad=os.path.basename(hedef), e=hata), "hata")
+            t["durum"] = ("hata", None)
+            return False
+        return True
+
+    def _tex_durdur(self) -> None:
+        """Bekleyen isleri iptal eder, suren latex'i oldurur, yazilani kaydeder."""
+        t = self.tex
+        for isim in ("isi", "boya_isi"):
+            if t[isim] is not None:
+                self.after_cancel(t[isim])
+                t[isim] = None
+        if t["surec"] is not None:
+            try:
+                t["surec"].kill()
+            except OSError:
+                pass
+            t["surec"] = None
+        if t["kirli"] or self.tex_metin.edit_modified():
+            self._tex_kaydet()
+
+    def tex_kapat(self, _olay=None) -> str:
+        if not self.tex:
+            self.bildir(self.m("tex_kapali"), "uyari")
+            return "break"
+        self._tex_durdur()
+        ad = os.path.basename(self.tex["yol"])
+        self.tex = None
+        self._bolmeleri_yerlestir()
+        self.yenile()
+        self.tuval.focus_set()
+        self.bildir(self.m("tex_kapandi", ad=ad), "vurgu")
+        return "break"
 
     # -- yer imleri (M koy, b liste) ---------------------------------------
     #
@@ -7183,6 +7801,8 @@ class Rubric(tk.Tk):
     def tus_geldi(self, olay) -> str | None:
         if self.focus_get() in (self.komut_girdi, self.liste, self.palet_girdi):
             return None
+        if self.tex_metin is not None and self.focus_get() is self.tex_metin:
+            return None                           # tex editoru: yazilan yazi olur
         ad = self.tus_adini_coz(olay)
         if not ad:
             return None
@@ -7452,6 +8072,8 @@ class Rubric(tk.Tk):
         if self._ipc_isi is not None:           # tek-pencere yoklamasi da dursun
             self.after_cancel(self._ipc_isi)
             self._ipc_isi = None
+        if self.tex:                            # tex: yazilan kaydedilsin, latex dursun
+            self._tex_durdur()
         if self._baski is not None:             # suren yazdirma: is parcacigi belgeyi iptal etsin
             self._baski["durdur"].set()
             if self._baski["belge"] is not None:

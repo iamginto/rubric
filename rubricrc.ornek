@@ -65,6 +65,7 @@ set yakinlastirma-adimi  1.15
 set en-az-yakinlastirma  0.10
 set en-cok-yakinlastirma 10.0
 set ters-renk            false    # gece modu ile acilsin istersen true
+set gece-modu            tema     # tema: sayfa temanin zemin + yazi rengine boyanir | ters: duz tersleme
 set son-konum            true     # dosyayi kaldigi yerden ac
 set oturum               true     # kapatinca acik belgeleri hatirla, acilista geri getir
 set son-belgeler         10       # belge listesinin siniri (<C-Left>/<C-Right>, B);
@@ -112,6 +113,17 @@ set baslik-cubugu        true     # rubric'in temali ust bari (Ctrl-K > baslik-c
 set windows-basligi      false    # Windows'un kendi beyaz baslik cubugu
 # Ust bar da durum cubugu da suruklenince pencereyi tasir, cift tik buyutur.
 
+# ---------------------------------------------------------------------------
+# Tex modu (T: yeni dosya / dosya ac; ya da :tex <dosya.tex>): bir yanda
+# kaynak, yaninda canli PDF.
+# Yazmayi birakinca kaynak kaydedilir ve derlenir; PDF kaynagin yanina yazilir.
+# Editorde Ctrl-S hemen derler, Esc PDF'e gecer, T geri getirir, Ctrl-W kapatir.
+# ---------------------------------------------------------------------------
+set tex-motoru           pdflatex # pdflatex | xelatex | lualatex (PATH'te olmali)
+set tex-yan              sol      # editor hangi yanda: sol | sag
+set tex-oran             50       # editorun genisligi, yuzde (15-85)
+set tex-gecikme          800      # yazmayi birakinca kac ms sonra derlesin; 0 = yalniz Ctrl-S
+
 
 # ---------------------------------------------------------------------------
 # Durum cubugu ve pencere basligi
@@ -152,6 +164,7 @@ set baslik-bicimi  {ad} [{sayfa}/{toplam}] - rubric
 #   baslik-cubugu dil
 #   vurgu-kalemi vurgular vurgu-geri-al vurgulari-aktar
 #   sayfa-duzeni birlestir karartma-kalemi karartmayi-uygula ustveri-temizle
+#   kopyala tex-modu tex-derle tex-kapat
 #   ara-ileri ara-geri sonraki-bulgu onceki-bulgu vurguyu-kapat
 #   komut-modu cik geri-zipla ileri-zipla yeniden-yukle ac
 #   sonraki-belge onceki-belge belgeyi-kapat kapanani-ac belgeler
