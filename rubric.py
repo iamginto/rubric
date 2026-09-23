@@ -495,6 +495,13 @@ VARSAYILAN_TUSLAR = {
     "<A-Right>": "bolme-saga",    "<A-Left>": "bolme-sola",
     "<A-w>": "bolme-gec",         "<A-o>": "bolme-tek",
     "v":"vurgu-kalemi",    "V": "vurgular",        "u": "vurgu-geri-al",
+    # i: vim'deki "insert". Imlecin altinda not varsa onu duzenler.
+    "i": "not-ekle",
+    # U / <C-z>: son silineni geri getirir (not ya da vurgu); `u` yalniz
+    # vurgularinki, ikisi ayri yigin. Not silmek silme kipinin isi.
+    "U": "geri-getir",     "<C-z>": "geri-getir",
+    # <Delete>: silme kipi - acikken tiklanan not ya da vurgu silinir.
+    "<Delete>": "silme-kipi",
     "M": "yer-imi-koy",     "b": "yer-imleri",
     # <C-S-p> degil: birden cok klavye dili kuruluyken Windows Ctrl+Shift'i
     # dil degistirmeye ayirabiliyor (bkz. yukarida <C-e>).
@@ -571,6 +578,9 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgular":       "highlight list - Enter go, x delete",
         "vurgu-geri-al":  "undo the last highlight add / delete",
         "vurgulari-aktar": "write a highlighted copy (<name>-highlighted.pdf, original untouched)",
+        "not-ekle":       "note at the cursor: hover to read it, i to edit, empty text deletes",
+        "geri-getir":     "bring back the last thing you deleted (note or highlight)",
+        "silme-kipi":     "delete mode: click a note or highlight to remove it, Esc leaves",
 
         "ac":             "pick a file and open it",
         "yeniden-yukle":  "reload the document from disk",
@@ -642,6 +652,9 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgular":       "vurgu listesi - Enter git, x sil",
         "vurgu-geri-al":  "son vurgu ekleme / silmesini geri al",
         "vurgulari-aktar": "vurgulu kopya PDF yaz (<ad>-vurgulu.pdf, aslı değişmez)",
+        "not-ekle":       "imlecin oldugu yere not: üstüne gelince okunur, i düzenler, boş metin siler",
+        "geri-getir":     "en son sildiğin şeyi geri getir (not ya da vurgu)",
+        "silme-kipi":     "silme kipi: tıkladığın notu ya da vurguyu siler, Esc çıkar",
 
         "ac":             "dosya seçip aç",
         "yeniden-yukle":  "belgeyi diskten yeniden oku",
@@ -713,6 +726,9 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgular":       "Markierungsliste - Enter springen, x löschen",
         "vurgu-geri-al":  "letztes Markieren / Löschen rückgängig machen",
         "vurgulari-aktar": "markierte Kopie schreiben (<Name>-markiert.pdf, Original bleibt)",
+        "not-ekle":       "Notiz an der Zeigerposition: zum Lesen darauf zeigen, i bearbeitet, leer löscht",
+        "geri-getir":     "zuletzt Gelöschtes zurückholen (Notiz oder Markierung)",
+        "silme-kipi":     "Löschmodus: Klick entfernt Notiz oder Markierung, Esc beendet",
 
         "ac":             "Datei auswählen und öffnen",
         "yeniden-yukle":  "Dokument neu von der Festplatte laden",
@@ -758,7 +774,8 @@ KOMUT_GRUPLARI = [
                "vurguyu-kapat"]),
     ("isaret ve ziplama", ["isaret-koy", "isarete-git", "yer-imi-koy", "yer-imleri",
                            "geri-zipla", "ileri-zipla"]),
-    ("vurgu", ["vurgu-kalemi", "vurgular", "vurgu-geri-al", "vurgulari-aktar"]),
+    ("vurgu", ["vurgu-kalemi", "vurgular", "vurgu-geri-al", "vurgulari-aktar",
+               "not-ekle", "geri-getir", "silme-kipi"]),
     ("dosya", ["ac", "belgeler", "sonraki-belge", "onceki-belge", "belgeyi-kapat",
                "kapanani-ac", "yeniden-yukle", "yazdir", "yazdir-sec", "komut-modu",
                "cik"]),
@@ -810,6 +827,17 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgu_islenemedi": "highlight could not be drawn (p{s}): {e}",
         "geri_alinacak_yok": "no highlight to undo",
         "vurgu_geri_alindi": "highlight undone",
+        "not_eklendi":      "note added",
+        "not_guncellendi":  "note updated",
+        "not_silindi":      "note deleted",
+        "not_sayfa_disi":   "point the cursor at a page first",
+        "not_istem":        "note>",
+        "not_geri_alindi":  "note change undone",
+        "not_geri_geldi":   "note restored",
+        "geri_getirilecek_yok": "nothing to bring back",
+        "silme_acik":       "delete mode: click a note or highlight (U / Ctrl-Z undoes, Esc leaves)",
+        "silme_kapali":     "delete mode off",
+        "silinecek_yok":    "nothing to delete there",
         "vurgu_geri_geldi": "deleted highlight restored",
         "yalniz_pdf":       "highlights work in PDFs only",
         "kalem_acik":       "pen on: drag, then Enter / colour key -> highlight, right click -> delete, Esc puts it down",
@@ -978,6 +1006,17 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgu_islenemedi": "vurgu işlenemedi (s{s}): {e}",
         "geri_alinacak_yok": "geri alınacak vurgu yok",
         "vurgu_geri_alindi": "vurgu geri alındı",
+        "not_eklendi":      "not eklendi",
+        "not_guncellendi":  "not güncellendi",
+        "not_silindi":      "not silindi",
+        "not_sayfa_disi":   "önce imleci bir sayfanın üstüne getir",
+        "not_istem":        "not>",
+        "not_geri_alindi":  "not değişikliği geri alındı",
+        "not_geri_geldi":   "not geri geldi",
+        "geri_getirilecek_yok": "geri getirilecek bir şey yok",
+        "silme_acik":       "silme kipi: not ya da vurguya tıkla (U / Ctrl-Z geri getirir, Esc çıkar)",
+        "silme_kapali":     "silme kipi kapandı",
+        "silinecek_yok":    "orada silinecek bir şey yok",
         "vurgu_geri_geldi": "silinen vurgu geri geldi",
         "yalniz_pdf":       "vurgu yalnızca PDF'te",
         "kalem_acik":       "kalem açık: sürükle, sonra Enter / renk tuşu -> vurgula, sağ tık -> sil, Esc bırak",
@@ -1140,6 +1179,17 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgu_islenemedi": "Markierung nicht darstellbar (S.{s}): {e}",
         "geri_alinacak_yok": "keine Markierung zum Rückgängigmachen",
         "vurgu_geri_alindi": "Markierung rückgängig gemacht",
+        "not_eklendi":      "Notiz hinzugefügt",
+        "not_guncellendi":  "Notiz aktualisiert",
+        "not_silindi":      "Notiz gelöscht",
+        "not_sayfa_disi":   "zeige zuerst auf eine Seite",
+        "not_istem":        "Notiz>",
+        "not_geri_alindi":  "Notizänderung rückgängig gemacht",
+        "not_geri_geldi":   "Notiz wiederhergestellt",
+        "geri_getirilecek_yok": "nichts zum Zurückholen",
+        "silme_acik":       "Löschmodus: auf Notiz oder Markierung klicken (U / Strg-Z holt zurück, Esc beendet)",
+        "silme_kapali":     "Löschmodus aus",
+        "silinecek_yok":    "dort gibt es nichts zu löschen",
         "vurgu_geri_geldi": "gelöschte Markierung wiederhergestellt",
         "yalniz_pdf":       "Markierungen nur in PDFs",
         "kalem_acik":       "Stift an: ziehen, dann Enter / Farbtaste -> markieren, Rechtsklick -> löschen, Esc legt ihn weg",
@@ -1351,6 +1401,9 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "isaret-koy": "set-mark", "isarete-git": "go-to-mark",
         "geri-zipla": "jump-back", "ileri-zipla": "jump-forward",
         "vurgu-kalemi": "highlighter", "vurgular": "highlights",
+        "not-ekle": "note",
+        "geri-getir": "restore",
+        "silme-kipi": "delete-mode",
         "vurgu-geri-al": "undo-highlight", "vurgulari-aktar": "export-highlights",
         "ac": "open-file", "yeniden-yukle": "reload", "komut-modu": "command-line",
         "cik": "quit",
@@ -1383,6 +1436,9 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "isaret-koy": "işaret-koy", "isarete-git": "işarete-git",
         "geri-zipla": "geri-zıpla", "ileri-zipla": "ileri-zıpla",
         "vurgu-kalemi": "vurgu-kalemi", "vurgular": "vurgular",
+        "not-ekle": "not",
+        "geri-getir": "geri-getir",
+        "silme-kipi": "silme-kipi",
         "vurgu-geri-al": "vurgu-geri-al", "vurgulari-aktar": "vurguları-aktar",
         "ac": "aç", "yeniden-yukle": "yeniden-yükle", "komut-modu": "komut-satırı",
         "cik": "çık",
@@ -1415,6 +1471,9 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "isaret-koy": "marke-setzen", "isarete-git": "zur-marke",
         "geri-zipla": "zurückspringen", "ileri-zipla": "vorspringen",
         "vurgu-kalemi": "textmarker", "vurgular": "markierungen",
+        "not-ekle": "notiz",
+        "geri-getir": "zurückholen",
+        "silme-kipi": "löschmodus",
         "vurgu-geri-al": "markierung-rückgängig",
         "vurgulari-aktar": "markierungen-exportieren",
         "ac": "öffnen", "yeniden-yukle": "neu-laden", "komut-modu": "befehlszeile",
@@ -1845,8 +1904,11 @@ BOLME_ALANLARI = (
     # ziplama listesi ve isaretler
     "zipla_gecmis", "zipla_ileri", "isaretler",
     # vurgular
-    "vurgular", "_vurgu_xref", "vurgu_gecmisi", "kalem", "_secim", "_kelimeler",
+    "vurgular", "_vurgu_xref", "vurgu_gecmisi", "kalem", "silme_kipi",
+    "_secim", "_kelimeler",
     "_bekleyen_vurgu",
+    # kenar notlari
+    "notlar", "_imlecteki_not", "_duzenlenen_not", "geri_yigini",
     # baglantilar
     "baglantilar_acik", "_baglantilar", "_baglanti_cizili", "_imlecteki_baglanti",
     "_baglanti_adayi", "_basis_noktasi", "_surukleniyor", "_satir_metinleri",
@@ -1904,6 +1966,11 @@ class Rubric(tk.Tk):
         self._tamamen_cik: bool = False    # tepsi modunda da gercekten cik
         self._ikon_yolu: str = ""
         self._son_olcu: tuple[int, int] | None = None
+        # Pencerenin buyutulmemis olcusu (en, boy, x, y) - kapanista bu yazilir,
+        # bkz. _konumu_hatirla. `_acilis_buyuk`: kayit "buyutulmus" diyorsa
+        # arayuz kurulduktan sonra zoomed'a gecilir.
+        self._normal_konum: tuple[int, int, int, int] | None = None
+        self._acilis_buyuk: bool = False
 
         # --- kip / girdi durumu ---
         self.mod: str = "normal"           # normal | komut | arama | icindekiler
@@ -1937,6 +2004,10 @@ class Rubric(tk.Tk):
         self._baglantilari_kur()
         self._ust_bari_yerlestir()
         self.cerceveyi_uygula()
+        self._konumu_kesinlestir()
+        if self._acilis_buyuk:      # gecen sefer buyutulmus kapatilmis
+            self.state("zoomed")
+            self.ust_dugmeler["buyut"].config(text="[=]")
 
         if self.yapi.hatalar:
             self.bildir(" | ".join(self.yapi.hata_metinleri()[:2]), "uyari")
@@ -2148,7 +2219,7 @@ class Rubric(tk.Tk):
                 self.iconbitmap(default=ikon)
             except tk.TclError:
                 pass
-        self.geometry("1000x760")
+        self._pencereyi_konumla()
 
         # Tuvaller bir kapta yan yana durur (bkz. "bolmeler"); tek bolmede kap
         # da tek tuvali tasir, gorunum degismez.
@@ -2343,7 +2414,7 @@ class Rubric(tk.Tk):
         t.bind("<ButtonPress-1>", gec(self.fare_bas))
         t.bind("<ButtonRelease-1>", orada(self.fare_birak))
         # Bos gezinme: taban bu bolme olur + baglantinin ustunde el imleci
-        t.bind("<Motion>", fareyle(self._baglanti_imleci))
+        t.bind("<Motion>", fareyle(self._gezinme))
         t.bind("<Leave>", orada(self._baglantidan_cik))
         t.bind("<Button-3>", gec(self.sag_tik))
 
@@ -2415,6 +2486,10 @@ class Rubric(tk.Tk):
         self._imlecteki_baglanti = None
         self.vurgu_gecmisi = []
         self._vurgulari_yukle(kayit)
+        self._imlecteki_not = None
+        self._duzenlenen_not = None
+        self.geri_yigini = []
+        self._notlari_yukle(kayit)
 
         self.zoom = 1.0
         self.sigdir = self.ayar["sigdir"]
@@ -2517,10 +2592,17 @@ class Rubric(tk.Tk):
             self._vurgu_xref = {}       # vurgu kimligi -> bellekteki not
             self.vurgu_gecmisi = []     # u ile geri alma
             self.kalem = False          # vurgu kalemi acik mi (v)
+            self.silme_kipi = False     # silme kipi acik mi (<Delete>)
             self._secim = None          # suren surukleme secimi
             self._kelimeler = {}        # sayfa -> kelime kutulari
             # Birakilan secim renk bekler: Enter varsayilan, renk tusu o renk, Esc birakir.
             self._bekleyen_vurgu = None
+
+            # kenar notlari (i)
+            self.notlar = []            # durum.json'daki kayitlarin kendisi
+            self._imlecteki_not = None  # balonu acik olan not
+            self._duzenlenen_not = None # komut satirinda yazilan not
+            self.geri_yigini = []       # U ile geri alma
 
             # baglanti gosterimi (<C-l>) ve tiklama
             self.baglantilar_acik = False
@@ -2793,6 +2875,84 @@ class Rubric(tk.Tk):
             self.belgeler.remove(dusen)
         return dusen
 
+    # -- pencerenin yeri ve boyu -------------------------------------------
+    #
+    # durum.json'da `_pencere` anahtari; belge kayitlari dosya yollarinda
+    # durdugu icin alt tire ile baslayan ad onlarla cakismaz. `_oturum`'un
+    # icine konmadi: pencerenin yeri hangi belgelerin acik oldugundan ayri
+    # bir sey, `set oturum false` diyen de kendi boyunu geri istiyor.
+
+    def _konumu_hatirla(self) -> None:
+        """Pencerenin buyutulmemis olcusunu akilda tutar.
+
+        Olcu Win32 cerceve dikdortgeninden okunur (bkz. _pencere_dikdortgeni);
+        Tk'nin geometry()'si bu pencerede tam donus yapmiyor.
+
+        Buyutulmusken olcu alinmaz: Windows o sirada ekranin boyunu verir,
+        onu kaydedersek kucultme boyu bir daha geri gelmez. Tam ekran ve
+        tepsiye inmis pencere de ayni sebeple atlanir; o anlarda son bilinen
+        normal olcu korunur."""
+        try:
+            if self.state() != "normal" or self.attributes("-fullscreen"):
+                return
+            g = _pencere_dikdortgeni(self) or _geometriyi_coz(self.geometry())
+        except tk.TclError:                 # yok edilmis pencere
+            return
+        if g and g[0] > 1 and g[1] > 1:     # daha cizilmemis pencere 1x1 der
+            self._normal_konum = g
+
+    def _pencere_kaydi(self) -> dict:
+        self._konumu_hatirla()
+        if not self._normal_konum:
+            return {}
+        en, boy, x, y = self._normal_konum
+        try:
+            buyuk = self.state() == "zoomed"
+        except tk.TclError:
+            buyuk = False
+        return {"en": en, "boy": boy, "x": x, "y": y, "buyuk": buyuk}
+
+    def _pencereyi_konumla(self) -> None:
+        """Acilista pencereyi gecen seferki yerine ve boyuna koyar.
+
+        Kayit ekran disina dusuyorsa (monitor cikarilmis, cozunurluk dusmus,
+        pencere ikinci ekranda birakilmis) ic ekrana cekilir: yoksa rubric
+        gorunmeyen bir kosede acilir ve kullanici penceresini bulamaz."""
+        en, boy, x, y = 1000, 760, None, None
+        p = self.kalici.veri.get("_pencere")
+        if isinstance(p, dict):
+            try:
+                en, boy = max(480, int(p["en"])), max(360, int(p["boy"]))
+                x, y = int(p["x"]), int(p["y"])
+                self._acilis_buyuk = bool(p.get("buyuk"))
+            except (KeyError, TypeError, ValueError):
+                en, boy, x, y = 1000, 760, None, None
+                self._acilis_buyuk = False
+        if x is None:
+            self.geometry(f"{en}x{boy}")    # ilk acilis: yerini Windows secsin
+            return
+        ex, ey, ege, eby = _ekran_alani(self)
+        en, boy = min(en, ege), min(boy, eby)
+        x = max(ex, min(x, ex + ege - en))
+        y = max(ey, min(y, ey + eby - boy))
+        self._normal_konum = (en, boy, x, y)    # buyuk acilirsa kucultme boyu bu
+        # Yaklasik yerlestirme: pencere yanlis kosede bir an gorunmesin.
+        # Kesini _konumu_kesinlestir yapar - pencere daha yaratilmadi.
+        self.geometry(f"{en}x{boy}+{x}+{y}")
+
+    def _konumu_kesinlestir(self) -> None:
+        """Arayuz kurulduktan sonra pencereyi tam kaydedilen dikdortgene oturtur.
+
+        Ayri adim, cunku _pencereyi_konumla widget'lar kurulurken calisiyor:
+        pencerenin Win32 tutamaci daha yok, MoveWindow orada is gormez.
+
+        Buyutulmus acilacaksa da once bu calisir: Windows'un "kucultunce
+        nereye donecegi" pencerenin buyutulmeden onceki dikdortgenidir,
+        onu koymazsak [+] tusuna basan kaydettigi boya degil Tk'nin
+        yaklasik boyuna doner."""
+        if self._normal_konum:
+            _pencereyi_tasi(self, *self._normal_konum)
+
     def oturumu_kaydet(self) -> None:
         # kapananlar da yazilir: q'dan hemen sonra Q'ya basan geri acabilsin.
         # `belgeler` / `aktif` bakilan bolmenindir: eski bicimi okuyan (ve
@@ -2805,6 +2965,9 @@ class Rubric(tk.Tk):
                          for b in self.bolmeler],
             "etkin": self.etkin,
         }
+        kayit = self._pencere_kaydi()
+        if kayit:                           # olcu alinamadiysa eskisini silme
+            self.kalici.veri["_pencere"] = kayit
         self.kalici.yaz()
 
     def oturumu_yukle(self, acilacak: list[str]) -> None:
@@ -3291,6 +3454,7 @@ class Rubric(tk.Tk):
 
         self.aktif_sayfayi_sapta(ust)
         self.bulgulari_ciz(gorunur)
+        self.notlari_ciz(gorunur)
         if self.baglantilar_acik or self._baglanti_cizili:
             self.baglantilari_ciz(gorunur)
         if self._bekleyen_vurgu:            # yeni islenen sayfanin ustunde kalsin
@@ -3489,6 +3653,13 @@ class Rubric(tk.Tk):
         if tur == pymupdf.LINK_NAMED:
             return str(b.get("name") or b.get("nameddest") or "")
         return ""
+
+    def _gezinme(self, olay) -> None:
+        """Tek <Motion> baglantisi: baglanti imleci, not balonu, silme x'i."""
+        if self.silme_kipi:
+            self._silme_imlecini_ciz(*self._tuval_noktasi(olay))
+        self._baglanti_imleci(olay)
+        self._not_imleci(olay)
 
     def _baglanti_imleci(self, olay) -> None:
         """Fare gezerken: baglantinin ustunde el imleci + hedefin ozeti."""
@@ -3742,8 +3913,9 @@ class Rubric(tk.Tk):
     def vurguyu_kapat(self) -> None:
         self._aramayi_birak()
         self.tuval.delete("bulgu")
-        if self.kalem:                  # Esc kalemi de birakir (vurgulara dokunmaz)
+        if self.kalem or self.silme_kipi:   # Esc kalemi ve silme kipini birakir
             self.kalem = False
+            self._silme_kipini_kapat()
             self.tuval.config(cursor="")
         self.gecici_ileti = ""
         self.durumu_tazele()
@@ -3839,8 +4011,270 @@ class Rubric(tk.Tk):
         self._notu_sil(v)
         if gecmise:
             self.vurgu_gecmisi.append(("sil", v))
+            self.geri_yigini.append(("vurgu-sil", v, None))   # U da geri getirsin
         self._vurgulari_kaydet()
         self._sayfayi_tazele(int(v["sayfa"]))
+
+    # -- kenar notlari (i) -------------------------------------------------
+    #
+    # Not serbest bir noktaya iliskir, vurguya degil: sayfanin herhangi bir
+    # yerine `i` ile dusulur. Kayit durum.json'da, dosya kaydinin `notlar`
+    # listesinde ve **sayfa nokta uzayinda** ({sayfa, x, y, metin}) - yani
+    # zoom, donme ve pencere boyu degisince not yerinde kalir. PDF dosyasina
+    # yazilmaz; vurgularin aksine bellekteki belgeye de not eklenmez, isaret
+    # dogrudan tuvale cizilir (sayfa resmi onbellege girdigi icin annotation
+    # olsaydi her degisiklikte sayfayi yeniden islemek gerekirdi).
+    #
+    # Isaret: [n] - sayfa uzerinde sabit piksel boyunda durur, zoom'la
+    # buyumez. Uzerine gelince notun kendisi koyu bir balonda acilir, fare
+    # cekilince kapanir (bkz. _not_balonu_goster).
+    #
+    # Isaretin altinda ince bir plaka var: sayfa beyaz olmayabiliyor (kapak
+    # gorseli, koyu sekil, tablo zemini) ve ciplak [n] oralarda kayboluyordu.
+    # Plaka balonla ayni renkleri kullanir, yani isaret balonun kucuk hali
+    # gibi durur.
+
+    NOT_ISARETI = "[n]"
+    NOT_PAYI = (4, 1)                   # plakanin yatay / dikey payi (px)
+
+    def _notlari_yukle(self, kayit: dict) -> None:
+        self.notlar = [n for n in kayit.get("notlar", [])
+                       if isinstance(n, dict) and str(n.get("metin", "")).strip()
+                       and 0 <= int(n.get("sayfa", -1)) < self.belge.page_count]
+
+    def _notlari_kaydet(self) -> None:
+        """Hemen diske: uygulama cokerse de not kaybolmasin (vurgular gibi)."""
+        kayit = self.kalici.dosya(self.pdf_yolu)
+        if self.notlar:
+            kayit["notlar"] = self.notlar
+        else:
+            kayit.pop("notlar", None)
+        self.kalici.yaz()
+
+    def _not_yazitipi(self) -> tuple:
+        return (self.ayar["yazitipi"], max(8, int(self.ayar["yazitipi-boy"])), "bold")
+
+    def _not_kutusu(self, n: dict, m: pymupdf.Matrix | None = None) -> tuple | None:
+        """Isaretin tuvaldeki dikdortgeni; sayfa gorunur degilse None."""
+        sayfa = int(n["sayfa"])
+        yer = self.sayfa_yeri(sayfa)
+        if not yer:
+            return None
+        nokta = pymupdf.Rect(n["x"], n["y"], n["x"], n["y"])
+        x0, y0, _x1, _y1 = self.aygit_dikdortgeni(sayfa, nokta, yer, m)
+        yatay, dikey = self.NOT_PAYI
+        en, boy = self._not_olcusu()
+        return (x0 - yatay, y0 - boy / 2 - dikey, x0 + en + yatay, y0 + boy / 2 + dikey)
+
+    def _not_olcusu(self) -> tuple[int, int]:
+        """[n]'in piksel olcusu. Olcum onbellekte: cizim her karede butun
+        gorunur notlar icin cagiriliyor, her seferinde Font kurmak israf."""
+        yt = self._not_yazitipi()
+        if getattr(self, "_not_olcu_anahtar", None) != yt:
+            yf = tkfont.Font(font=yt)
+            self._not_olcu_anahtar = yt
+            self._not_olcu = (yf.measure(self.NOT_ISARETI), yf.metrics("linespace"))
+        return self._not_olcu
+
+    def notlari_ciz(self, gorunur: set[int]) -> None:
+        self.tuval.delete("not")
+        if not self.notlar:
+            return
+        m = self.sayfa_matrisi()            # her not icin yeniden kurulmasin
+        yatay, _dikey = self.NOT_PAYI
+        for n in self.notlar:
+            if int(n["sayfa"]) not in gorunur:
+                continue
+            kutu = self._not_kutusu(n, m)
+            if kutu is None:
+                continue
+            x0, y0, x1, y1 = kutu
+            self.tuval.create_rectangle(x0, y0, x1, y1, fill=self.ayar["palet-zemin"],
+                                        outline=self.ayar["palet-cerceve"], tags=("not",))
+            self.tuval.create_text(x0 + yatay, (y0 + y1) / 2, text=self.NOT_ISARETI,
+                                   anchor="w", fill=self.ayar["vurgu"],
+                                   font=self._not_yazitipi(), tags=("not",))
+
+    def noktadaki_not(self, x: float, y: float) -> dict | None:
+        m = self.sayfa_matrisi()
+        for n in self.notlar:
+            kutu = self._not_kutusu(n, m)
+            if kutu and kutu[0] <= x <= kutu[2] and kutu[1] <= y <= kutu[3]:
+                return n
+        return None
+
+    # Balon tuvale cizilir, ayri bir Toplevel degil: overrideredirect bir
+    # pencere Windows'ta odagi kimi zaman kapiyor ve kaydirmada geride
+    # kaliyor. Tuvale cizilince sayfayla birlikte hareket eder ve temanin
+    # renklerini zaten kullanir.
+
+    def _not_balonu_goster(self, n: dict) -> None:
+        self.tuval.delete("not-balon")
+        kutu = self._not_kutusu(n)
+        if kutu is None:
+            return
+        pay, kenar = 7, 10
+        en_cok = max(180, int(self.tuval.winfo_width() * 0.42))
+        metin = self.tuval.create_text(0, 0, text=n["metin"], anchor="nw", width=en_cok,
+                                       fill=self.ayar["cubuk-on"], font=(self.ayar["yazitipi"],
+                                       max(8, int(self.ayar["yazitipi-boy"]))),
+                                       tags=("not-balon",))
+        mx0, my0, mx1, my1 = self.tuval.bbox(metin)
+        en, boy = (mx1 - mx0) + pay * 2, (my1 - my0) + pay * 2
+
+        # Isaretin sagina; ekranin sagina sigmiyorsa soluna gecer.
+        x = kutu[2] + kenar
+        if x + en > self.tuval.canvasx(0) + self.tuval.winfo_width():
+            x = max(self.tuval.canvasx(0), kutu[0] - kenar - en)
+        y = kutu[1]
+        alt_sinir = self.tuval.canvasy(0) + self.tuval.winfo_height()
+        if y + boy > alt_sinir:
+            y = max(self.tuval.canvasy(0), alt_sinir - boy)
+
+        zemin = self.tuval.create_rectangle(x, y, x + en, y + boy,
+                                            fill=self.ayar["palet-zemin"],
+                                            outline=self.ayar["palet-cerceve"],
+                                            tags=("not-balon",))
+        self.tuval.coords(metin, x + pay, y + pay)
+        self.tuval.tag_raise(zemin)
+        self.tuval.tag_raise(metin)
+        self._imlecteki_not = n
+
+    def _not_balonu_gizle(self) -> None:
+        if self._imlecteki_not is None:
+            return
+        self.tuval.delete("not-balon")
+        self._imlecteki_not = None
+
+    def _not_imleci(self, olay) -> None:
+        """Fare gezerken: isaretin ustundeyse balonu ac, cekilince kapat."""
+        if self._secim is not None or self._surukleniyor:
+            return
+        n = self.noktadaki_not(*self._tuval_noktasi(olay))
+        if n is self._imlecteki_not:
+            return
+        if n is None:
+            self._not_balonu_gizle()
+        else:
+            self._not_balonu_goster(n)
+
+    # -- not yazma / duzenleme --------------------------------------------
+
+    def not_ekle(self) -> None:
+        """`i`: imlecin altinda not varsa onu duzenler, yoksa oraya yenisini acar."""
+        if not self.belge:
+            return
+        x, y = self._fare_tuval_noktasi()
+        varolan = self.noktadaki_not(x, y)
+        if varolan is not None:
+            self._duzenlenen_not = varolan
+            self.not_modu(varolan["metin"])
+            return
+        s = self._noktadaki_sayfa(x, y)
+        if s is None:
+            self.bildir(self.m("not_sayfa_disi"), "uyari")
+            return
+        nokta = self._sayfa_noktasina(s, x, y)
+        self._duzenlenen_not = {"sayfa": s["no"], "x": nokta.x, "y": nokta.y, "metin": ""}
+        self.not_modu("")
+
+    def _fare_tuval_noktasi(self) -> tuple[float, float]:
+        """Farenin o anki yeri, tuval koordinatinda. Tus basildigi anda
+        okunur: `i` klavyeden geliyor, yaninda bir fare olayi gelmiyor."""
+        px, py = self.winfo_pointerxy()
+        return (self.tuval.canvasx(px - self.tuval.winfo_rootx()),
+                self.tuval.canvasy(py - self.tuval.winfo_rooty()))
+
+    def not_onayla(self, metin: str) -> None:
+        """Komut satirindan gelen metni isler. Bos metin notu siler."""
+        n, self._duzenlenen_not = self._duzenlenen_not, None
+        if n is None:
+            return
+        metin = metin.strip()
+        if not metin:
+            if n in self.notlar:
+                self._not_sil(n)
+                self.bildir(self.m("not_silindi"), "vurgu")
+            else:
+                self._not_balonu_gizle()    # hic yazilmadan bosa onaylandi
+            return
+        if n not in self.notlar:
+            n["metin"] = metin
+            n["zaman"] = time.time()
+            self._not_ekle(n)
+            self.bildir(self.m("not_eklendi"), "vurgu")
+            return
+        eski, n["metin"] = n["metin"], metin
+        if eski != metin:
+            self.geri_yigini.append(("not-duzenle", n, eski))
+        self._notlari_kaydet()
+        self._not_balonu_gizle()
+        self.ciz()
+        self.bildir(self.m("not_guncellendi"), "vurgu")
+
+    # -- silme / geri getirme ----------------------------------------------
+    #
+    # `geri_yigini` tek bir zaman cizgisi: not ekleme/silme/duzenlemesi VE
+    # silinen vurgular. `U` (geri-getir) tepesindekini geri alir - silme
+    # kipinde ikisini de silebildigin icin geri getirmenin de tek tus olmasi
+    # gerekiyor.
+    #
+    # `u` (vurgu-geri-al) eskisi gibi duruyor ve yalniz vurgulara bakiyor.
+    # Bir vurgu silmesi iki yigina birden yazilir; ikisinden biri onu geri
+    # getirdiginde oteki yiginda kalan kayit **olu** olur. Bu yuzden geri
+    # getirme her adimda "zaten yerinde mi" diye bakip olu kaydi atlar -
+    # yoksa ayni vurgu iki kez eklenirdi.
+
+    def _not_ekle(self, n: dict, gecmise: bool = True) -> None:
+        self.notlar.append(n)
+        if gecmise:
+            self.geri_yigini.append(("not-ekle", n, None))
+        self._notlari_kaydet()
+        self._not_balonu_gizle()
+        self.ciz()
+
+    def _not_sil(self, n: dict, gecmise: bool = True) -> None:
+        if n not in self.notlar:
+            return
+        self.notlar.remove(n)
+        if gecmise:
+            self.geri_yigini.append(("not-sil", n, None))
+        self._notlari_kaydet()
+        self._not_balonu_gizle()
+        self.ciz()
+
+    def geri_getir(self) -> None:
+        """`U`: son silineni geri getirir; not duzenlemesini de geri alir.
+
+        Yigindaki kayit baska bir yoldan (`u`) zaten geri alinmissa olu
+        sayilir ve atlanir - bir alttakine bakilir."""
+        while self.geri_yigini:
+            islem, nesne, eski = self.geri_yigini.pop()
+            if islem == "not-sil":
+                if nesne in self.notlar:
+                    continue                    # olu kayit
+                self._not_ekle(nesne, gecmise=False)
+                self.bildir(self.m("not_geri_geldi"), "vurgu")
+            elif islem == "not-ekle":
+                if nesne not in self.notlar:
+                    continue
+                self._not_sil(nesne, gecmise=False)
+                self.bildir(self.m("not_geri_alindi"), "vurgu")
+            elif islem == "not-duzenle":
+                if nesne not in self.notlar:
+                    continue
+                nesne["metin"] = eski
+                self._notlari_kaydet()
+                self._not_balonu_gizle()
+                self.ciz()
+                self.bildir(self.m("not_geri_alindi"), "vurgu")
+            else:                               # vurgu-sil
+                if nesne in self.vurgular:
+                    continue
+                self._vurgu_ekle(nesne, gecmise=False)
+                self.bildir(self.m("vurgu_geri_geldi"), "vurgu")
+            return
+        self.bildir(self.m("geri_getirilecek_yok"), "uyari")
 
     def vurgu_geri_al(self) -> None:
         if not self.vurgu_gecmisi:
@@ -3861,8 +4295,67 @@ class Rubric(tk.Tk):
             self.bildir(self.m("yalniz_pdf"), "uyari")
             return
         self.kalem = not self.kalem
+        if self.kalem:
+            self._silme_kipini_kapat()      # ikisi ayni anda anlamsiz
         self.tuval.config(cursor="xterm" if self.kalem else "")
         self.bildir(self.m("kalem_acik" if self.kalem else "kalem_kapali"), "vurgu")
+
+    # -- silme kipi (<Delete>) ---------------------------------------------
+    #
+    # Acikken tiklanan sey silinir: once not, altinda vurgu. Kip tek tikta
+    # kapanmaz - arka arkaya temizlemek icin acik kalir, <Esc> ya da yine
+    # <Delete> kapatir. Silinen her sey `geri_yigini`na yazilir, `U` ya da
+    # <C-z> geri getirir (vurgu ayrica `u` ile de).
+
+    def _silme_kipini_kapat(self) -> None:
+        """Kipi ve okun ucundaki x'i birlikte kaldirir. Tek yerde durmali:
+        kip uc ayri yoldan kapaniyor (<Delete>, <Esc>, kalemi acmak) ve
+        birinde x'i silmeyi unutmak ekranda asili bir isaret birakiyor."""
+        self.silme_kipi = False
+        self.tuval.delete("silme-imleci")
+
+    def silme_kipi_degistir(self) -> None:
+        if not self.belge:
+            return
+        if self.silme_kipi:
+            self._silme_kipini_kapat()
+            self.bildir(self.m("silme_kapali"), "vurgu")
+            return
+        self.silme_kipi = True
+        self.kalem = False                  # ikisi ayni anda anlamsiz
+        # Sistem imleci ok olarak kalir: "bu tik siler" bilgisini okun ucuna
+        # cizdigimiz x veriyor (bkz. _silme_imlecini_ciz).
+        self.tuval.config(cursor="")
+        self.bildir(self.m("silme_acik"), "uyari")
+
+    def _silme_imlecini_ciz(self, x: float, y: float) -> None:
+        """Imlecin ucuna kucuk bir x: linux'taki xkill gibi, "bu tik siler"
+        oldugu bakinca anlasilsin. Sistem imleci ok olarak kalir; x onun
+        sag altina, okun isaret ettigi noktanin yaninda durur."""
+        self.tuval.delete("silme-imleci")
+        if not self.silme_kipi:
+            return
+        d, kol = 11, 4                      # okun ucundan uzaklik, x'in kolu
+        mx, my = x + d, y + d
+        for ax, ay, bx, by in ((-kol, -kol, kol, kol), (-kol, kol, kol, -kol)):
+            self.tuval.create_line(mx + ax, my + ay, mx + bx, my + by,
+                                   fill=self.ayar["hata"], width=2,
+                                   capstyle="butt", tags=("silme-imleci",))
+        self.tuval.tag_raise("silme-imleci")
+
+    def _silme_tiki(self, x: float, y: float) -> None:
+        """Silme kipinde sol tik: noktadaki notu, yoksa vurguyu siler."""
+        n = self.noktadaki_not(x, y)
+        if n is not None:
+            self._not_sil(n)
+            self.bildir(self.m("not_silindi"), "vurgu")
+            return
+        v = self.noktadaki_vurgu(x, y)
+        if v is not None:
+            self._vurgu_sil(v)
+            self.bildir(self.m("vurgu_silindi"), "vurgu")
+            return
+        self.bildir(self.m("silinecek_yok"), "uyari")
 
     # -- vurgu: fare ve secim ---------------------------------------------
 
@@ -4057,7 +4550,18 @@ class Rubric(tk.Tk):
     # tuvalde sol tus: kalem acik ya da Shift basiliysa secim, degilse kaydirma
 
     def fare_bas(self, olay) -> None:
+        # Palet acikken belgeye tiklamak paleti kapatir - disari tiklamak
+        # "vazgectim" demenin dogal yolu. Tik yalnizca kapatir; altindaki
+        # sayfada kaydirma/secim baslatmaz, baglanti da acmaz.
+        if self.mod == "palet":
+            self.paleti_kapat()
+            return
         self.tuval.focus_set()
+        # Silme kipi: tik yalnizca siler - kaydirma / secim baslatmaz,
+        # altindaki baglantiyi da acmaz.
+        if self.silme_kipi:
+            self._silme_tiki(*self._tuval_noktasi(olay))
+            return
         self._baglanti_adayi = None
         if self.belge and self.belge.is_pdf and (self.kalem or olay.state & 0x1):
             self.secim_basla(olay)
@@ -5023,14 +5527,34 @@ class Rubric(tk.Tk):
         self.komut_girdi.icursor("end")
         self.komut_girdi.focus_set()
 
+    def not_modu(self, metin: str = "") -> None:
+        """Komut satirini not yazmak icin acar. Onek yok: yazilan her sey
+        notun kendisi, `:` ya da `/` ile baslayan bir not da yazilabilsin."""
+        self.mod = "not"
+        self.komut_girdi.pack(side="bottom", fill="x", before=self.cubuk)
+        self.komut_girdi.delete(0, "end")
+        self.komut_girdi.insert(0, metin)
+        self.komut_girdi.icursor("end")
+        self.komut_girdi.focus_set()
+        self.durumu_tazele()
+
     def komut_iptal(self) -> None:
         self.komut_girdi.pack_forget()
+        self._duzenlenen_not = None     # Esc: yazilan not atilir
         self.mod = "normal"
         self.tuval.focus_set()
         self.durumu_tazele()
 
     def komut_onayla(self, olay=None) -> str:
         ham = self.komut_girdi.get()
+        if self.mod == "not":
+            n = self._duzenlenen_not          # komut_iptal bunu temizliyor
+            self.komut_girdi.pack_forget()
+            self.mod = "normal"
+            self.tuval.focus_set()
+            self._duzenlenen_not = n
+            self.not_onayla(ham)
+            return "break"
         self.komut_iptal()
         if not ham:
             return "break"
@@ -5172,6 +5696,9 @@ class Rubric(tk.Tk):
             "vurgu-kalemi": self.vurgu_kalemi,
             "vurgular":     self.vurgu_listesi,
             "vurgu-geri-al": self.vurgu_geri_al,
+            "not-ekle": self.not_ekle,
+            "geri-getir": self.geri_getir,
+            "silme-kipi": self.silme_kipi_degistir,
             "vurgulari-aktar": self.vurgulari_aktar,
             "ara-ileri":    lambda: self.komut_modu("/"),
             "ara-geri":     lambda: self.komut_modu("?"),
@@ -5915,6 +6442,9 @@ class Rubric(tk.Tk):
     def pencere_degisti(self, olay) -> None:
         if olay.widget is not self:
             return
+        # Olcuden once: pencereyi tasimak boyu degistirmez, asagidaki erken
+        # donus yuzunden yeni x/y hic kaydedilmezdi.
+        self._konumu_hatirla()
         olcu = (self.winfo_width(), self.winfo_height())
         if self._son_olcu == olcu:
             return
@@ -6110,6 +6640,68 @@ class _Esnek(dict):
 
     def __missing__(self, anahtar):
         return "{" + anahtar + "}"
+
+
+def _pencere_dikdortgeni(pencere) -> tuple[int, int, int, int] | None:
+    """Pencerenin gercek Win32 cercevesi: (en, boy, x, y). Olculemezse None.
+
+    Neden Tk'nin geometry()'si degil: cerceveyi_uygula'nin WM_NCCALCSIZE
+    kancasi istemci alanini baslik payina dogru buyutuyor, Tk ise eski
+    payi hesaba katmaya devam ediyor. geometry() ile okuyup geometry() ile
+    yazmak bu yuzden tam donus yapmiyor - pencere her acilista 2x34 px
+    buyuyor. GetWindowRect / MoveWindow ikilisi ayni uzayda calisir."""
+    if sys.platform != "win32":
+        return None
+    try:
+        dik = wt.RECT()
+        hwnd = wt.HWND(int(pencere.wm_frame(), 16))
+        if not ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(dik)):
+            return None
+    except Exception:
+        return None
+    return dik.right - dik.left, dik.bottom - dik.top, dik.left, dik.top
+
+
+def _pencereyi_tasi(pencere, en: int, boy: int, x: int, y: int) -> bool:
+    """_pencere_dikdortgeni'nin tersi; basarisizsa False (cagiran Tk'ye duser)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        hwnd = wt.HWND(int(pencere.wm_frame(), 16))
+        return bool(ctypes.windll.user32.MoveWindow(hwnd, x, y, en, boy, True))
+    except Exception:
+        return False
+
+
+def _geometriyi_coz(g: str) -> tuple[int, int, int, int] | None:
+    """Tk'nin "1000x760+180+90" dizesi -> (en, boy, x, y). Ekran solda ya da
+    yukarida kalan monitorde negatif koordinat verir, isaret de okunur."""
+    # Tk eksi koordinati "+-90" diye yazar, "-90" da olabilir: bastaki arti
+    # istege bagli, isaret sayinin kendisinde.
+    m = re.match(r"^(\d+)x(\d+)\+?(-?\d+)\+?(-?\d+)$", g.strip())
+    if not m:
+        return None
+    return int(m[1]), int(m[2]), int(m[3]), int(m[4])
+
+
+def _ekran_alani(pencere) -> tuple[int, int, int, int]:
+    """Pencerenin konabilecegi alan: (x, y, genislik, yukseklik).
+
+    Windows'ta butun monitorlerin kapsadigi "sanal ekran" olculur; Tk'nin
+    winfo_screenwidth'i yalnizca birincil monitoru bilir, onunla hesaplarsak
+    ikinci ekranda birakilmis pencere her acilista birinciye geri cekilir.
+    Sanal ekran sol ust kosesi negatif olabilir (monitor solda duruyorsa),
+    o yuzden genislik degil dort deger birden donuyor."""
+    if sys.platform == "win32":
+        try:
+            u32 = ctypes.windll.user32
+            olc = u32.GetSystemMetrics
+            x, y, en, boy = olc(76), olc(77), olc(78), olc(79)   # SM_*VIRTUALSCREEN
+            if en > 0 and boy > 0:
+                return x, y, en, boy
+        except Exception:
+            pass                        # olcemedik: asagidaki Tk hesabina dus
+    return 0, 0, pencere.winfo_screenwidth(), pencere.winfo_screenheight()
 
 
 _WS_CAPTION = 0x00C00000
