@@ -521,6 +521,8 @@ VARSAYILAN_TUSLAR = {
     # T: tex modu (kapaliysa acar, aciksa editore gecer). <C-c>: Shift+surukle
     # ile secilen metni panoya koyar; `y` renk tusu oldugu icin yank degil.
     "T": "tex-modu",        "<C-c>": "kopyala",
+    # C: donusturucu (PDF / metin / resim)
+    "C": "donustur",
     "M": "yer-imi-koy",     "b": "yer-imleri",
     # <C-S-p> degil: birden cok klavye dili kuruluyken Windows Ctrl+Shift'i
     # dil degistirmeye ayirabiliyor (bkz. yukarida <C-e>).
@@ -609,6 +611,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "tex mode: .tex source beside its live PDF (again: focus the editor)",
         "tex-derle":      "save and compile the .tex now",
         "tex-kapat":      "close tex mode (the source is saved)",
+        "donustur":       "convert this document: PDF, plain text or PNG pages",
 
         "ac":             "pick a file and open it",
         "yeniden-yukle":  "reload the document from disk",
@@ -692,6 +695,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "tex modu: .tex kaynağı yanında canlı PDF (yine basınca: editöre geç)",
         "tex-derle":      ".tex'i kaydet ve şimdi derle",
         "tex-kapat":      "tex modunu kapat (kaynak kaydedilir)",
+        "donustur":       "belgeyi dönüştür: PDF, düz metin ya da PNG sayfalar",
 
         "ac":             "dosya seçip aç",
         "yeniden-yukle":  "belgeyi diskten yeniden oku",
@@ -775,6 +779,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "TeX-Modus: .tex-Quelltext neben dem Live-PDF (nochmal: zum Editor)",
         "tex-derle":      ".tex speichern und jetzt kompilieren",
         "tex-kapat":      "TeX-Modus schließen (Quelltext wird gespeichert)",
+        "donustur":       "Dokument umwandeln: PDF, reiner Text oder PNG-Seiten",
 
         "ac":             "Datei auswählen und öffnen",
         "yeniden-yukle":  "Dokument neu von der Festplatte laden",
@@ -823,7 +828,7 @@ KOMUT_GRUPLARI = [
     ("vurgu", ["vurgu-kalemi", "vurgular", "vurgu-geri-al", "vurgulari-aktar",
                "not-ekle", "geri-getir", "silme-kipi", "kopyala"]),
     ("dosya", ["ac", "belgeler", "sonraki-belge", "onceki-belge", "belgeyi-kapat",
-               "kapanani-ac", "yeniden-yukle", "yazdir", "yazdir-sec", "komut-modu",
+               "kapanani-ac", "yeniden-yukle", "donustur", "yazdir", "yazdir-sec", "komut-modu",
                "cik"]),
     ("pdf araclari", ["sayfa-duzeni", "birlestir", "karartma-kalemi",
                       "karartmayi-uygula", "ustveri-temizle"]),
@@ -966,12 +971,27 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "nothing to copy - shift+drag over the text first",
         "gece_modu_durum":  "night mode: {durum}",
         "tex_sec":          "open a .tex file",
+        "word_cevriliyor":  "word: converting {ad} with Word...",
+        "word_suruyor":     "still converting {ad}, one at a time",
+        "donustur_belge_yok": "open a document first",
+        "donustur_pdf":     "a PDF copy, the original stays",
+        "donustur_metin_ad": "plain text",
+        "donustur_metin":   ".txt, only the words",
+        "donustur_resim_ad": "PNG pages",
+        "donustur_resim":   "one image per page into a folder",
+        "donustur_baslik":  "save as {bicim}",
+        "donustur_klasor":  "folder for the pages",
+        "donustur_ustune":  "that's the source file - pick another name",
+        "donustur_suruyor": "writing pages... {n}/{toplam}",
+        "donusturuldu":     "saved: {yol}",
+        "word_yok":         "{ad}: Word couldn't convert it - basic view, formatting may be lost",
+        "word_acilamadi":   "{ad}: Word couldn't convert it and it can't be opened without Word",
         "tex_yeni":         "new file",
         "tex_dosya_ac":     "open a file",
         "tex_yeni_baslik":  "new .tex file",
         "tex_yeni_aciklama": "start a fresh .tex, pick where it lives",
         "tex_ac_aciklama":  "edit an existing .tex",
-        "tex_karti_ipucu":  "j/k move   enter pick   n / o   esc cancel",
+        "secim_karti_ipucu": "j/k move   enter pick   {tuslar}   esc cancel",
         "tex_acildi":       "tex: {ad} - ctrl-s compiles, esc goes to the pdf, T comes back",
         "tex_kapandi":      "tex mode closed, {ad} saved",
         "tex_kapali":       "tex mode is off (T opens it)",
@@ -1211,12 +1231,27 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "kopyalanacak bir şey yok - önce shift+sürükle ile seç",
         "gece_modu_durum":  "gece modu: {durum}",
         "tex_sec":          ".tex dosyası aç",
+        "word_cevriliyor":  "word: {ad} Word ile çevriliyor...",
+        "word_suruyor":     "{ad} hâlâ çevriliyor, sırayla",
+        "donustur_belge_yok": "önce bir belge aç",
+        "donustur_pdf":     "PDF kopyası, aslı kalır",
+        "donustur_metin_ad": "düz metin",
+        "donustur_metin":   ".txt, yalnızca yazı",
+        "donustur_resim_ad": "PNG sayfalar",
+        "donustur_resim":   "her sayfa bir resim, bir klasöre",
+        "donustur_baslik":  "{bicim} olarak kaydet",
+        "donustur_klasor":  "sayfaların klasörü",
+        "donustur_ustune":  "bu kaynak dosyanın kendisi - başka ad seç",
+        "donustur_suruyor": "sayfalar yazılıyor... {n}/{toplam}",
+        "donusturuldu":     "kaydedildi: {yol}",
+        "word_yok":         "{ad}: Word çeviremedi - basit görünüm, biçim kaybolabilir",
+        "word_acilamadi":   "{ad}: Word çeviremedi, Word olmadan da açılamıyor",
         "tex_yeni":         "yeni dosya",
         "tex_dosya_ac":     "dosya aç",
         "tex_yeni_baslik":  "yeni .tex dosyası",
         "tex_yeni_aciklama": "sıfırdan bir .tex başlat, yerini seç",
         "tex_ac_aciklama":  "var olan bir .tex'i düzenle",
-        "tex_karti_ipucu":  "j/k gez   enter seç   n / o   esc vazgeç",
+        "secim_karti_ipucu": "j/k gez   enter seç   {tuslar}   esc vazgeç",
         "tex_acildi":       "tex: {ad} - ctrl-s derler, esc pdf'e geçer, T geri getirir",
         "tex_kapandi":      "tex modu kapandı, {ad} kaydedildi",
         "tex_kapali":       "tex modu kapalı (T açar)",
@@ -1457,12 +1492,27 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "nichts zu kopieren - erst mit Shift+Ziehen auswählen",
         "gece_modu_durum":  "Nachtmodus: {durum}",
         "tex_sec":          ".tex-Datei öffnen",
+        "word_cevriliyor":  "word: {ad} wird mit Word umgewandelt...",
+        "word_suruyor":     "{ad} wird noch umgewandelt, eins nach dem anderen",
+        "donustur_belge_yok": "erst ein Dokument öffnen",
+        "donustur_pdf":     "PDF-Kopie, das Original bleibt",
+        "donustur_metin_ad": "reiner Text",
+        "donustur_metin":   ".txt, nur die Wörter",
+        "donustur_resim_ad": "PNG-Seiten",
+        "donustur_resim":   "ein Bild pro Seite in einen Ordner",
+        "donustur_baslik":  "als {bicim} speichern",
+        "donustur_klasor":  "Ordner für die Seiten",
+        "donustur_ustune":  "das ist die Quelldatei - anderen Namen wählen",
+        "donustur_suruyor": "Seiten werden geschrieben... {n}/{toplam}",
+        "donusturuldu":     "gespeichert: {yol}",
+        "word_yok":         "{ad}: Word konnte nicht umwandeln - einfache Ansicht, Formatierung kann fehlen",
+        "word_acilamadi":   "{ad}: Word konnte nicht umwandeln, ohne Word lässt es sich nicht öffnen",
         "tex_yeni":         "neue Datei",
         "tex_dosya_ac":     "Datei öffnen",
         "tex_yeni_baslik":  "neue .tex-Datei",
         "tex_yeni_aciklama": "neue .tex beginnen, Speicherort wählen",
         "tex_ac_aciklama":  "vorhandene .tex bearbeiten",
-        "tex_karti_ipucu":  "j/k bewegen   Enter wählen   n / o   Esc abbrechen",
+        "secim_karti_ipucu": "j/k bewegen   Enter wählen   {tuslar}   Esc abbrechen",
         "tex_acildi":       "tex: {ad} - Strg-S kompiliert, Esc geht zum PDF, T zurück",
         "tex_kapandi":      "TeX-Modus geschlossen, {ad} gespeichert",
         "tex_kapali":       "TeX-Modus ist aus (T öffnet ihn)",
@@ -1673,6 +1723,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "ustveri-temizle": "strip-metadata",
         "kopyala": "copy", "tex-modu": "tex", "tex-derle": "tex-compile",
         "tex-kapat": "tex-close",
+        "donustur": "convert",
         "ac": "open-file", "yeniden-yukle": "reload", "komut-modu": "command-line",
         "cik": "quit",
         "sonraki-belge": "next-doc", "onceki-belge": "prev-doc",
@@ -1713,6 +1764,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "ustveri-temizle": "üstveri-temizle",
         "kopyala": "kopyala", "tex-modu": "tex-modu", "tex-derle": "tex-derle",
         "tex-kapat": "tex-kapat",
+        "donustur": "dönüştür",
         "ac": "aç", "yeniden-yukle": "yeniden-yükle", "komut-modu": "komut-satırı",
         "cik": "çık",
         "sonraki-belge": "sonraki-belge", "onceki-belge": "önceki-belge",
@@ -1754,6 +1806,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "ustveri-temizle": "metadaten-entfernen",
         "kopyala": "kopieren", "tex-modu": "tex-modus", "tex-derle": "tex-kompilieren",
         "tex-kapat": "tex-schließen",
+        "donustur": "umwandeln",
         "ac": "öffnen", "yeniden-yukle": "neu-laden", "komut-modu": "befehlszeile",
         "cik": "beenden",
         "sonraki-belge": "nächstes-dokument", "onceki-belge": "voriges-dokument",
@@ -1996,6 +2049,22 @@ _TEX_DESENLER = (
     ("tex_mat", re.compile(r"\$\$.*?\$\$|\$(?:\\.|[^$\\])+\$")),
     ("tex_komut", re.compile(r"\\(?:[A-Za-z@]+\*?|.)")),
     ("tex_yorum", re.compile(r"(?<!\\)%.*")),
+)
+
+
+# Word belgeleri: Word (COM) PDF'e cevirir, rubric PDF'i acar. MuPDF'in kendi
+# .docx destegi denendi (2026-09-23): kalin/italik/renk, madde isaretleri ve
+# tablo gidiyor - ancak Word yoksa ona dusulur.
+WORD_UZANTILARI = (".docx", ".docm", ".doc", ".rtf", ".odt")
+WORD_ZAMAN_ASIMI = 120
+# Yollar ortam degiskeniyle gelir (tirnak derdi yok). Once yarim dosyaya yazar,
+# rubric bitince yerine tasir: yarida kalan PDF acilmasin.
+WORD_BETIGI = (
+    "$w = New-Object -ComObject Word.Application; $w.Visible = $false; "
+    "$w.DisplayAlerts = 0; try { "
+    "$d = $w.Documents.Open($env:RUBRIC_WORD_GIRDI, $false, $true, $false); "
+    "$d.ExportAsFixedFormat($env:RUBRIC_WORD_CIKTI, 17); $d.Close(0) } "
+    "finally { $w.Quit() }"
 )
 
 
@@ -2255,8 +2324,11 @@ class Rubric(tk.Tk):
         # acilista kurulur (bkz. _tex_arayuzu_kur)
         self.tex: dict | None = None
         self.tex_metin: tk.Text | None = None
-        self.tex_karti: tk.Frame | None = None     # T'nin "yeni / ac" karti
-        self._tex_karti_secili = 0
+        self.secim_karti: tk.Frame | None = None   # T / C'nin ortadaki karti
+        self._word: dict | None = None     # suren Word -> PDF cevirisi (bkz. word_ac)
+        self._secim_karti_secili = 0
+        self._secim_satirlari: list[tuple] = []
+        self._secim_karti_baslik = ""
         self._boyut_isi = None             # pencere boyu durulunca yenile
         self._ipc_isi = None               # tek-pencere kuyruk yoklamasi
         # --- tepsi modu (bkz. _tepsi_kur) ---
@@ -2752,10 +2824,13 @@ class Rubric(tk.Tk):
 
     # -- belge -------------------------------------------------------------
 
-    def belgeyi_ac(self, yol: str) -> None:
+    def belgeyi_ac(self, yol: str, word: bool = True) -> None:
         yol = os.path.abspath(os.path.expanduser(yol.strip().strip('"')))
         if yol.lower().endswith(".tex"):          # kaynak: yaninda PDF'iyle tex modu
             self.tex_ac(yol)
+            return
+        if word and yol.lower().endswith(WORD_UZANTILARI) and os.path.exists(yol):
+            self.word_ac(yol)                     # Word PDF'e cevirir, o acilir
             return
         if not os.path.exists(yol):
             self.bildir(self.m("bulunamadi", ne=yol), "hata")
@@ -3296,6 +3371,7 @@ class Rubric(tk.Tk):
         if kayit:                           # olcu alinamadiysa eskisini silme
             self.kalici.veri["_pencere"] = kayit
         self.kalici.yaz()
+        self._word_temizle()                # listeden dusen Word cevirisi diskte kalmasin
 
     def oturumu_yukle(self, acilacak: list[str]) -> None:
         """Acilis: onceki oturumun bolmeleri + komut satirindan gelenler.
@@ -6709,6 +6785,7 @@ class Rubric(tk.Tk):
             "karartmayi-uygula": self.karartmayi_uygula,
             "ustveri-temizle": self.ustveri_temizle,
             "kopyala":      self.kopyala,
+            "donustur":     self.donustur,
             "tex-modu":     self.tex_modu,
             "tex-derle":    self.tex_derle,
             "tex-kapat":    self.tex_kapat,
@@ -7048,8 +7125,10 @@ class Rubric(tk.Tk):
         # sonuncusu acilir; digerleri <C-Left>/<C-Right> ile.
         yollar = filedialog.askopenfilenames(
             title=self.m("ac_baslik"),
-            filetypes=[(self.m("ac_belgeler"), "*.pdf *.epub *.xps *.cbz *.mobi *.fb2 *.tex"),
-                       ("PDF", "*.pdf"), ("TeX", "*.tex"), (self.m("ac_tumu"), "*.*")],
+            filetypes=[(self.m("ac_belgeler"),
+                        "*.pdf *.epub *.xps *.cbz *.mobi *.fb2 *.tex *.docx *.doc *.rtf *.odt"),
+                       ("PDF", "*.pdf"), ("TeX", "*.tex"), ("Word", "*.docx *.doc *.rtf *.odt"),
+                       (self.m("ac_tumu"), "*.*")],
         )
         tex = [y for y in yollar if y.lower().endswith(".tex")]
         yollar = [y for y in yollar if not y.lower().endswith(".tex")]
@@ -7058,6 +7137,179 @@ class Rubric(tk.Tk):
             self.belgeyi_ac(yollar[-1])
         if tex:                                   # .tex listeye girmez, tex modunda acilir
             self.tex_ac(tex[-1])
+
+    # -- Word belgeleri -----------------------------------------------------
+    #
+    # .docx / .doc / .rtf / .odt: Word gorunmez acilip belgeyi PDF'e cevirir
+    # (`WORD_BETIGI`, ayri powershell sureci, arayuz donmaz; soguk Word ~7 sn).
+    # Sonuc `%LOCALAPPDATA%\rubric\word\<ozet>\<ad>.pdf`de, yalnizca belge
+    # kullanimdayken durur: acik, bir bolmenin listesinde ya da <C-e> ile geri
+    # acilabilir. Oradan dusunce `_word_temizle` siler (oturum her yazildiginda)
+    # - kullanici her Word dosyasinin PDF'inin diskte birikmesini istemedi.
+    # Kalici PDF isteyen C (donusturucu) ile istedigi yere yazar. Word yoksa ya da
+    # cevirme olmazsa MuPDF'in kendi (kaba) Office gorunumune dusulur.
+
+    def _word_pdf_yolu(self, yol: str) -> str:
+        ozet = hashlib.sha1(os.path.normcase(yol).encode("utf-8")).hexdigest()[:8]
+        dizin = os.path.join(veri_dizini(), "word", ozet)
+        os.makedirs(dizin, exist_ok=True)
+        return os.path.join(dizin, os.path.splitext(os.path.basename(yol))[0] + ".pdf")
+
+    def word_ac(self, yol: str) -> None:
+        hedef = self._word_pdf_yolu(yol)
+        if os.path.exists(hedef) and os.path.getmtime(hedef) >= os.path.getmtime(yol):
+            self.kalici.dosya(hedef)["word-kaynagi"] = yol
+            self.belgeyi_ac(hedef)
+            return
+        if self._word is not None:
+            self.bildir(self.m("word_suruyor", ad=os.path.basename(self._word["yol"])), "uyari")
+            return
+        yarim = hedef[:-4] + ".yarim.pdf"
+        ortam = dict(os.environ, RUBRIC_WORD_GIRDI=yol, RUBRIC_WORD_CIKTI=yarim)
+        try:
+            surec = subprocess.Popen(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", WORD_BETIGI],
+                env=ortam, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError:
+            self._word_yedegi(yol)
+            return
+        self._word = {"surec": surec, "yol": yol, "hedef": hedef, "yarim": yarim,
+                      "basla": time.monotonic(), "bolme": self.bolme}
+        self.bildir(self.m("word_cevriliyor", ad=os.path.basename(yol)), "uyari")
+        self.after(200, self._word_bekle)
+
+    def _word_bekle(self) -> None:
+        w = self._word
+        if w is None:
+            return
+        kod = w["surec"].poll()
+        if kod is None:
+            if time.monotonic() - w["basla"] < WORD_ZAMAN_ASIMI:
+                self.after(200, self._word_bekle)
+                return
+            w["surec"].kill()
+            kod = -1
+        self._word = None
+        bolme = w["bolme"] if w["bolme"] in self.bolmeler else self.bolme
+        if kod == 0 and os.path.exists(w["yarim"]):
+            try:
+                os.replace(w["yarim"], w["hedef"])
+            except OSError:
+                kod = -1
+        if kod == 0:
+            self.kalici.dosya(w["hedef"])["word-kaynagi"] = w["yol"]   # :save-pdf nereye onersin
+            with self._bolmede(bolme):
+                self.belgeyi_ac(w["hedef"])
+        else:
+            with self._bolmede(bolme):
+                self._word_yedegi(w["yol"])
+
+    def _word_temizle(self) -> None:
+        """Hicbir yerde kullanilmayan Word cevirilerini siler. Acik belge
+        MuPDF'te kilitli oldugu icin silinemez; zaten tutulanlar arasinda."""
+        kok = os.path.join(veri_dizini(), "word")
+        if not os.path.isdir(kok):
+            return
+        tut = set()
+        for b in self.bolmeler:
+            tut.update(b.belgeler or [])
+            if b.pdf_yolu:
+                tut.add(b.pdf_yolu)
+        tut.update(k["yol"] for k in self.kapananlar)
+        if self._word is not None:
+            tut.add(self._word["yarim"])
+        tut = {os.path.normcase(os.path.abspath(y)) for y in tut}
+        for ozet in os.listdir(kok):
+            dizin = os.path.join(kok, ozet)
+            if not os.path.isdir(dizin):
+                continue
+            for ad in os.listdir(dizin):
+                yol = os.path.join(dizin, ad)
+                if os.path.normcase(yol) not in tut:
+                    try:
+                        os.remove(yol)
+                    except OSError:
+                        pass
+            try:
+                os.rmdir(dizin)                  # bos kaldiysa
+            except OSError:
+                pass
+
+    # -- donusturucu (C) ----------------------------------------------------
+    #
+    # Bakilan belge (PDF, EPUB, MOBI, FB2, XPS, CBZ ya da Word'den cevrilmis)
+    # PDF'e, duz metne ya da sayfa sayfa PNG'ye. Hedefi hep kullanici secer;
+    # kaynak hic degismez. PDF -> Word denendi (2026-09-23): Word COM PDF'i
+    # acarken gorunmez bir onay penceresinde takiliyor, o yuzden yok.
+
+    def donustur(self) -> None:
+        if not self.belge:
+            self.bildir(self.m("donustur_belge_yok"), "uyari")
+            return
+        kaynak = self._donusum_kaynagi()
+        satirlar = []
+        if not self.belge.is_pdf or kaynak != self.pdf_yolu:     # PDF'i PDF'e cevirmek yok
+            satirlar.append(("p", "PDF", self.m("donustur_pdf"), lambda: self._donustur("pdf")))
+        satirlar.append(("t", self.m("donustur_metin_ad"), self.m("donustur_metin"),
+                         lambda: self._donustur("txt")))
+        satirlar.append(("i", self.m("donustur_resim_ad"), self.m("donustur_resim"),
+                         lambda: self._donustur("png")))
+        self.secim_karti_ac(f"$ convert  {os.path.basename(kaynak)}", satirlar)
+
+    def _donusum_kaynagi(self) -> str:
+        """Kullanicinin actigi dosya: Word'den cevrilmisse .docx, degilse kendisi."""
+        return self.kalici.dosya(self.pdf_yolu).get("word-kaynagi") or self.pdf_yolu
+
+    def _donustur(self, bicim: str) -> None:
+        kaynak = self._donusum_kaynagi()
+        kok = os.path.splitext(os.path.basename(kaynak))[0]
+        dizin = os.path.dirname(kaynak)
+        if bicim == "png":
+            hedef = filedialog.askdirectory(title=self.m("donustur_klasor"), initialdir=dizin)
+        else:
+            uzanti = "." + bicim
+            hedef = filedialog.asksaveasfilename(
+                title=self.m("donustur_baslik", bicim=bicim.upper()), initialdir=dizin,
+                initialfile=kok + uzanti, defaultextension=uzanti,
+                filetypes=[(bicim.upper(), "*" + uzanti)])
+        if not hedef:
+            return
+        if bicim != "png" and any(self._ayni_yol(hedef, y) for y in (kaynak, self.pdf_yolu)):
+            self.bildir(self.m("donustur_ustune"), "hata")      # kaynagin ustune yazma
+            return
+        try:
+            if bicim == "pdf":
+                if self.belge.is_pdf:                   # Word'den cevrilmis: hazir PDF
+                    shutil.copyfile(self.pdf_yolu, hedef)
+                else:
+                    with open(hedef, "wb") as f:
+                        f.write(self.belge.convert_to_pdf())
+            elif bicim == "txt":
+                with open(hedef, "w", encoding="utf-8") as f:
+                    f.write("\n\n".join(sayfa.get_text() for sayfa in self.belge))
+            else:
+                # 150 dpi: ekranda net, dosyasi makul. Adlar sirali kalsin diye 0 dolgulu.
+                hane = len(str(self.belge.page_count))
+                for i, sayfa in enumerate(self.belge):
+                    sayfa.get_pixmap(dpi=150, alpha=False).save(
+                        os.path.join(hedef, f"{kok}-{str(i + 1).zfill(hane)}.png"))
+                    if i % 5 == 4:
+                        self.bildir(self.m("donustur_suruyor", n=i + 1,
+                                           toplam=self.belge.page_count), "uyari")
+                        self.update_idletasks()
+        except Exception as e:
+            self.bildir(self.m("tex_yazilamadi", ad=os.path.basename(hedef), e=e), "hata")
+            return
+        self.bildir(self.m("donusturuldu", yol=hedef), "vurgu")
+
+    def _word_yedegi(self, yol: str) -> None:
+        """Word olmadi: MuPDF'in kendi gorunumu (bicim cogu gider), uyariyla."""
+        self.belgeyi_ac(yol, word=False)
+        if self.belge is not None and self._ayni_yol(self.pdf_yolu, yol):
+            self.bildir(self.m("word_yok", ad=os.path.basename(yol)), "uyari")
+        else:
+            self.bildir(self.m("word_acilamadi", ad=os.path.basename(yol)), "hata")
 
     # -- tex modu (T) ------------------------------------------------------
     #
@@ -7081,101 +7333,117 @@ class Rubric(tk.Tk):
         if self.tex:
             self.tex_metin.focus_set()
             return
+        self.secim_karti_ac("$ tex", [
+            ("n", self.m("tex_yeni"), self.m("tex_yeni_aciklama"), lambda: self._tex_sec("yeni")),
+            ("o", self.m("tex_dosya_ac"), self.m("tex_ac_aciklama"), lambda: self._tex_sec("ac")),
+        ])
+
+    # -- secim karti (T, C) --------------------------------------------------
+    #
+    # Ortada duran, paletten bagimsiz buyuk kart: her satir (tus, ad, aciklama,
+    # islev). j/k ya da oklar gezer, Enter / satirin tusu / tik secer, Esc ya
+    # da disari tik kapatir.
+
+    def secim_karti_ac(self, baslik: str, satirlar: list[tuple]) -> None:
         if self.mod == "palet":
             self.paleti_kapat()
-        if self.tex_karti is None:
-            self._tex_kartini_kur()
-        self._tex_karti_renkleri()
-        self._tex_karti_secili = 0
-        self._tex_kartini_ciz()
-        self.tex_karti.place(relx=0.5, rely=0.45, anchor="center")
-        self.tex_karti.lift()
-        self.tex_karti.focus_set()
-
-    # (tus, metin anahtari, aciklama anahtari, secim)
-    _TEX_KARTI_SATIRLARI = (("n", "tex_yeni", "tex_yeni_aciklama", "yeni"),
-                            ("o", "tex_dosya_ac", "tex_ac_aciklama", "ac"))
-
-    def _tex_kartini_kur(self) -> None:
-        """T'nin secim karti: paletten bagimsiz, ortada, iki buyuk satir."""
-        k = self.tex_karti = tk.Frame(self, bd=0, highlightthickness=1, takefocus=True)
-        self.tex_karti_baslik = tk.Label(k, anchor="w", bd=0, padx=22, pady=12)
-        self.tex_karti_baslik.pack(side="top", fill="x")
-        self.tex_karti_cizgi = tk.Frame(k, height=1, bd=0)
-        self.tex_karti_cizgi.pack(side="top", fill="x")
-        self.tex_karti_satirlar = []
-        for i in range(len(self._TEX_KARTI_SATIRLARI)):
-            e = tk.Label(k, anchor="w", bd=0, padx=22, pady=14, cursor="hand2")
+        if self.secim_karti is None:
+            self._secim_kartini_kur()
+        for e in self.secim_karti_satirlar:
+            e.destroy()
+        self._secim_satirlari = list(satirlar)
+        self.secim_karti_satirlar = []
+        for i in range(len(satirlar)):
+            e = tk.Label(self.secim_karti_govde, anchor="w", bd=0, padx=22, pady=14,
+                         cursor="hand2")
             e.pack(side="top", fill="x")
-            e.bind("<Enter>", lambda _e, i=i: self._tex_karti_git(i))
-            e.bind("<Button-1>", lambda _e, i=i: self._tex_karti_sec(i))
-            self.tex_karti_satirlar.append(e)
-        self.tex_karti_alt_cizgi = tk.Frame(k, height=1, bd=0)
-        self.tex_karti_alt_cizgi.pack(side="top", fill="x")
-        self.tex_karti_ipucu = tk.Label(k, anchor="w", bd=0, padx=22, pady=6)
-        self.tex_karti_ipucu.pack(side="top", fill="x")
-        k.bind("<Key>", self._tex_karti_tus)
+            e.bind("<Enter>", lambda _e, i=i: self._secim_karti_git(i))
+            e.bind("<Button-1>", lambda _e, i=i: self._secim_karti_sec(i))
+            self.secim_karti_satirlar.append(e)
+        self._secim_karti_baslik = baslik
+        self._secim_karti_renkleri()
+        self._secim_karti_secili = 0
+        self._secim_kartini_ciz()
+        self.secim_karti.place(relx=0.5, rely=0.45, anchor="center")
+        self.secim_karti.lift()
+        self.secim_karti.focus_set()
+
+    def _secim_kartini_kur(self) -> None:
+        k = self.secim_karti = tk.Frame(self, bd=0, highlightthickness=1, takefocus=True)
+        self.secim_karti_baslik = tk.Label(k, anchor="w", bd=0, padx=22, pady=12)
+        self.secim_karti_baslik.pack(side="top", fill="x")
+        self.secim_karti_cizgi = tk.Frame(k, height=1, bd=0)
+        self.secim_karti_cizgi.pack(side="top", fill="x")
+        self.secim_karti_govde = tk.Frame(k, bd=0)
+        self.secim_karti_govde.pack(side="top", fill="x")
+        self.secim_karti_satirlar = []
+        self.secim_karti_alt_cizgi = tk.Frame(k, height=1, bd=0)
+        self.secim_karti_alt_cizgi.pack(side="top", fill="x")
+        self.secim_karti_ipucu = tk.Label(k, anchor="w", bd=0, padx=22, pady=6)
+        self.secim_karti_ipucu.pack(side="top", fill="x")
+        k.bind("<Key>", self._secim_karti_tus)
         # Baska yere tiklayinca kart kapanir. Satira tiklamak odagi almaz
         # (Label), yani o tik once kapatip sonra secmeyi bozmaz.
-        k.bind("<FocusOut>", lambda _e: self._tex_kartini_kapat())
+        k.bind("<FocusOut>", lambda _e: self._secim_kartini_kapat())
 
-    def _tex_karti_renkleri(self) -> None:
+    def _secim_karti_renkleri(self) -> None:
         a = self.ayar
         buyuk = (a["yazitipi"], a["yazitipi-boy"] + 4)
         orta = (a["yazitipi"], a["yazitipi-boy"] + 2)
         yt = (a["yazitipi"], a["yazitipi-boy"])
         z = a["palet-zemin"]
-        self.tex_karti.config(bg=z, highlightbackground=a["vurgu"], highlightcolor=a["vurgu"])
-        self.tex_karti_baslik.config(bg=z, fg=a["vurgu"], font=buyuk, text="$ tex")
-        for c in (self.tex_karti_cizgi, self.tex_karti_alt_cizgi):
+        self.secim_karti.config(bg=z, highlightbackground=a["vurgu"], highlightcolor=a["vurgu"])
+        self.secim_karti_govde.config(bg=z)
+        self.secim_karti_baslik.config(bg=z, fg=a["vurgu"], font=buyuk,
+                                       text=self._secim_karti_baslik)
+        for c in (self.secim_karti_cizgi, self.secim_karti_alt_cizgi):
             c.config(bg=a["palet-cerceve"])
-        for e in self.tex_karti_satirlar:
+        for e in self.secim_karti_satirlar:
             e.config(font=orta)
-        self.tex_karti_ipucu.config(bg=a["cubuk-zemin"], fg=a["sonuk"], font=yt,
-                                    text=self.m("tex_karti_ipucu"))
+        tuslar = " / ".join(t for t, _, _, _ in self._secim_satirlari)
+        self.secim_karti_ipucu.config(bg=a["cubuk-zemin"], fg=a["sonuk"], font=yt,
+                                      text=self.m("secim_karti_ipucu", tuslar=tuslar))
 
-    def _tex_kartini_ciz(self) -> None:
+    def _secim_kartini_ciz(self) -> None:
         a = self.ayar
-        adlar = [self.m(ad) for _, ad, _, _ in self._TEX_KARTI_SATIRLARI]
-        en = max(len(ad) for ad in adlar) + 4
-        for i, (e, (tus, _, aciklama, _)) in enumerate(zip(self.tex_karti_satirlar,
-                                                          self._TEX_KARTI_SATIRLARI)):
-            secili = i == self._tex_karti_secili
-            e.config(text=f"{'>' if secili else ' '} [{tus}] {adlar[i].ljust(en)}"
-                          f"{self.m(aciklama)}",
+        en = max(len(ad) for _, ad, _, _ in self._secim_satirlari) + 4
+        for i, (e, (tus, ad, aciklama, _)) in enumerate(zip(self.secim_karti_satirlar,
+                                                           self._secim_satirlari)):
+            secili = i == self._secim_karti_secili
+            e.config(text=f"{'>' if secili else ' '} [{tus}] {ad.ljust(en)}{aciklama}",
                      bg=a["panel-secili"] if secili else a["palet-zemin"],
                      fg=a["vurgu"] if secili else a["cubuk-on"])
 
-    def _tex_karti_git(self, i: int) -> None:
-        self._tex_karti_secili = i % len(self._TEX_KARTI_SATIRLARI)
-        self._tex_kartini_ciz()
+    def _secim_karti_git(self, i: int) -> None:
+        self._secim_karti_secili = i % len(self._secim_satirlari)
+        self._secim_kartini_ciz()
 
-    def _tex_karti_tus(self, olay) -> str:
+    def _secim_karti_tus(self, olay) -> str:
         ad = olay.keysym
         if ad in ("j", "Down", "Tab"):
-            self._tex_karti_git(self._tex_karti_secili + 1)
+            self._secim_karti_git(self._secim_karti_secili + 1)
         elif ad in ("k", "Up", "ISO_Left_Tab"):
-            self._tex_karti_git(self._tex_karti_secili - 1)
+            self._secim_karti_git(self._secim_karti_secili - 1)
         elif ad in ("Return", "KP_Enter", "space"):
-            self._tex_karti_sec(self._tex_karti_secili)
+            self._secim_karti_sec(self._secim_karti_secili)
         elif ad in ("Escape", "q"):
-            self._tex_kartini_kapat()
+            self._secim_kartini_kapat()
         else:
-            for i, (tus, _, _, _) in enumerate(self._TEX_KARTI_SATIRLARI):
+            for i, (tus, _, _, _) in enumerate(self._secim_satirlari):
                 if ad == tus:
-                    self._tex_karti_sec(i)
+                    self._secim_karti_sec(i)
                     break
         return "break"
 
-    def _tex_kartini_kapat(self) -> None:
-        if self.tex_karti is not None and self.tex_karti.winfo_ismapped():
-            self.tex_karti.place_forget()
-            if self.focus_get() in (self.tex_karti, None):
+    def _secim_kartini_kapat(self) -> None:
+        if self.secim_karti is not None and self.secim_karti.winfo_ismapped():
+            self.secim_karti.place_forget()
+            if self.focus_get() in (self.secim_karti, None):
                 self.tuval.focus_set()
 
-    def _tex_karti_sec(self, i: int) -> None:
-        self._tex_kartini_kapat()
-        self._tex_sec(self._TEX_KARTI_SATIRLARI[i][3])
+    def _secim_karti_sec(self, i: int) -> None:
+        self._secim_kartini_kapat()
+        self._secim_satirlari[i][3]()
 
     def _tex_sec(self, secim: str) -> None:
         """Secim menusunden: yeni dosya (nereye kaydedilecegi sorulur, sablonla
@@ -7896,8 +8164,8 @@ class Rubric(tk.Tk):
     def tus_geldi(self, olay) -> str | None:
         if self.focus_get() in (self.komut_girdi, self.liste, self.palet_girdi):
             return None
-        if self.tex_metin is not None and self.focus_get() in (self.tex_metin, self.tex_karti):
-            return None                           # tex editoru / karti kendi tuslarini alir
+        if self.focus_get() is not None and self.focus_get() in (self.tex_metin, self.secim_karti):
+            return None                           # tex editoru / secim karti kendi tuslarini alir
         ad = self.tus_adini_coz(olay)
         if not ad:
             return None
