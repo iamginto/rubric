@@ -297,6 +297,7 @@ import contextlib                                 # noqa: E402
 import json                                       # noqa: E402
 import queue                                      # noqa: E402
 import re                                         # noqa: E402
+import gzip                                       # noqa: E402
 import hashlib                                    # noqa: E402
 import shutil                                    # noqa: E402
 import subprocess                                 # noqa: E402
@@ -384,6 +385,9 @@ VARSAYILAN_AYAR = {
     # recolor'u); tema degisince sayfa da doner. ters: duz renk tersleme.
     "gece-modu":      "tema",
     "son-konum":      True,        # dosyayi kaldigi yerden ac
+    # Acik belge diskte degisince (baska program yeniden yazdi) kaldigi
+    # yerden yeniden yuklenir; zathura'daki gibi. Saniyede bir bakilir.
+    "otomatik-yenile": True,
     # Belge listesi (<C-Left>/<C-Right>). zathura'nin yolu: bellekte yalnizca
     # bakilan belge acik, digerleri yol + kaldigi yer; liste de sinirli
     # (zathura'da show-recent, varsayilani 10). Oturum zathura'da yok.
@@ -611,6 +615,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "tex mode: .tex source beside its live PDF (again: focus the editor)",
         "tex-derle":      "save and compile the .tex now",
         "tex-kapat":      "close tex mode (the source is saved)",
+        "tex-sync":       "show the editor line in the PDF (ctrl-j; ctrl+click the PDF goes back)",
         "donustur":       "convert this document: PDF, plain text or PNG pages",
 
         "ac":             "pick a file and open it",
@@ -695,6 +700,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "tex modu: .tex kaynağı yanında canlı PDF (yine basınca: editöre geç)",
         "tex-derle":      ".tex'i kaydet ve şimdi derle",
         "tex-kapat":      "tex modunu kapat (kaynak kaydedilir)",
+        "tex-sync":       "editördeki satırı PDF'te göster (ctrl-j; PDF'te ctrl+tık geri götürür)",
         "donustur":       "belgeyi dönüştür: PDF, düz metin ya da PNG sayfalar",
 
         "ac":             "dosya seçip aç",
@@ -779,6 +785,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "TeX-Modus: .tex-Quelltext neben dem Live-PDF (nochmal: zum Editor)",
         "tex-derle":      ".tex speichern und jetzt kompilieren",
         "tex-kapat":      "TeX-Modus schließen (Quelltext wird gespeichert)",
+        "tex-sync":       "Editorzeile im PDF zeigen (Strg-J; Strg+Klick im PDF führt zurück)",
         "donustur":       "Dokument umwandeln: PDF, reiner Text oder PNG-Seiten",
 
         "ac":             "Datei auswählen und öffnen",
@@ -832,7 +839,7 @@ KOMUT_GRUPLARI = [
                "cik"]),
     ("pdf araclari", ["sayfa-duzeni", "birlestir", "karartma-kalemi",
                       "karartmayi-uygula", "ustveri-temizle"]),
-    ("tex", ["tex-modu", "tex-derle", "tex-kapat"]),
+    ("tex", ["tex-modu", "tex-derle", "tex-sync", "tex-kapat"]),
     ("bolmeler", ["bolme-saga", "bolme-sola", "bolme-gec", "bolme-tek"]),
     ("ayarlar", ["geri-acma-siniri", "yazici", "tepsi"]),
     # Temalar gibi: palette tek satir, Enter renk listesini acar; tusu yok.
@@ -971,6 +978,13 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "nothing to copy - shift+drag over the text first",
         "gece_modu_durum":  "night mode: {durum}",
         "tex_sec":          "open a .tex file",
+        "tex_sync_yok":     "no sync data yet - compile once (ctrl-s)",
+        "tex_sync_baska":   "that comes from {dosya}:{satir}",
+        "tex_sync_satir":   "line {satir}",
+        "yenilendi":        "{ad} changed on disk - reloaded",
+        "bulucu_ipucu":     "type to filter   up/down move   enter open   ctrl-o windows dialog   esc",
+        "bulucu_sayi":      "{n}/{toplam}",
+        "bulucu_taraniyor": "scanning...",
         "word_cevriliyor":  "word: converting {ad} with Word...",
         "word_suruyor":     "still converting {ad}, one at a time",
         "donustur_belge_yok": "open a document first",
@@ -992,7 +1006,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tex_yeni_aciklama": "start a fresh .tex, pick where it lives",
         "tex_ac_aciklama":  "edit an existing .tex",
         "secim_karti_ipucu": "j/k move   enter pick   {tuslar}   esc cancel",
-        "tex_acildi":       "tex: {ad} - ctrl-s compiles, esc goes to the pdf, T comes back",
+        "tex_acildi":       "tex: {ad} - ctrl-s compiles, ctrl-j shows it in the pdf, ctrl+click the pdf jumps back, esc to the pdf",
         "tex_kapandi":      "tex mode closed, {ad} saved",
         "tex_kapali":       "tex mode is off (T opens it)",
         "tex_motor_yok":    "{motor} not found - install MiKTeX / TeX Live or :set tex-motoru",
@@ -1231,6 +1245,13 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "kopyalanacak bir şey yok - önce shift+sürükle ile seç",
         "gece_modu_durum":  "gece modu: {durum}",
         "tex_sec":          ".tex dosyası aç",
+        "tex_sync_yok":     "henüz eşleme verisi yok - bir kez derle (ctrl-s)",
+        "tex_sync_baska":   "orası {dosya}:{satir} dosyasından",
+        "tex_sync_satir":   "satır {satir}",
+        "yenilendi":        "{ad} diskte değişti - yeniden yüklendi",
+        "bulucu_ipucu":     "yaz, süz   yukarı/aşağı gez   enter aç   ctrl-o windows penceresi   esc",
+        "bulucu_sayi":      "{n}/{toplam}",
+        "bulucu_taraniyor": "taranıyor...",
         "word_cevriliyor":  "word: {ad} Word ile çevriliyor...",
         "word_suruyor":     "{ad} hâlâ çevriliyor, sırayla",
         "donustur_belge_yok": "önce bir belge aç",
@@ -1252,7 +1273,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tex_yeni_aciklama": "sıfırdan bir .tex başlat, yerini seç",
         "tex_ac_aciklama":  "var olan bir .tex'i düzenle",
         "secim_karti_ipucu": "j/k gez   enter seç   {tuslar}   esc vazgeç",
-        "tex_acildi":       "tex: {ad} - ctrl-s derler, esc pdf'e geçer, T geri getirir",
+        "tex_acildi":       "tex: {ad} - ctrl-s derler, ctrl-j pdf'te gösterir, pdf'te ctrl+tık geri götürür, esc pdf'e",
         "tex_kapandi":      "tex modu kapandı, {ad} kaydedildi",
         "tex_kapali":       "tex modu kapalı (T açar)",
         "tex_motor_yok":    "{motor} bulunamadı - MiKTeX / TeX Live kur ya da :set tex-motoru",
@@ -1492,6 +1513,13 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "nichts zu kopieren - erst mit Shift+Ziehen auswählen",
         "gece_modu_durum":  "Nachtmodus: {durum}",
         "tex_sec":          ".tex-Datei öffnen",
+        "tex_sync_yok":     "noch keine Sync-Daten - einmal kompilieren (Strg-S)",
+        "tex_sync_baska":   "das kommt aus {dosya}:{satir}",
+        "tex_sync_satir":   "Zeile {satir}",
+        "yenilendi":        "{ad} wurde geändert - neu geladen",
+        "bulucu_ipucu":     "tippen filtert   hoch/runter   Enter öffnet   Strg-O Windows-Dialog   Esc",
+        "bulucu_sayi":      "{n}/{toplam}",
+        "bulucu_taraniyor": "wird durchsucht...",
         "word_cevriliyor":  "word: {ad} wird mit Word umgewandelt...",
         "word_suruyor":     "{ad} wird noch umgewandelt, eins nach dem anderen",
         "donustur_belge_yok": "erst ein Dokument öffnen",
@@ -1723,6 +1751,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "ustveri-temizle": "strip-metadata",
         "kopyala": "copy", "tex-modu": "tex", "tex-derle": "tex-compile",
         "tex-kapat": "tex-close",
+        "tex-sync": "tex-sync",
         "donustur": "convert",
         "ac": "open-file", "yeniden-yukle": "reload", "komut-modu": "command-line",
         "cik": "quit",
@@ -1764,6 +1793,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "ustveri-temizle": "üstveri-temizle",
         "kopyala": "kopyala", "tex-modu": "tex-modu", "tex-derle": "tex-derle",
         "tex-kapat": "tex-kapat",
+        "tex-sync": "tex-eşle",
         "donustur": "dönüştür",
         "ac": "aç", "yeniden-yukle": "yeniden-yükle", "komut-modu": "komut-satırı",
         "cik": "çık",
@@ -1806,6 +1836,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "ustveri-temizle": "metadaten-entfernen",
         "kopyala": "kopieren", "tex-modu": "tex-modus", "tex-derle": "tex-kompilieren",
         "tex-kapat": "tex-schließen",
+        "tex-sync": "tex-sync",
         "donustur": "umwandeln",
         "ac": "öffnen", "yeniden-yukle": "neu-laden", "komut-modu": "befehlszeile",
         "cik": "beenden",
@@ -2068,6 +2099,39 @@ WORD_BETIGI = (
 )
 
 
+# SyncTeX kaydi: tur, etiket, satir[, sutun] : x, y [: W [, H, D]] (sp cinsinden).
+# "[" (dikey kutu) alinmaz: sayfanin tamamini kaplar, satir bilgisi yaniltir.
+_SYNC_KAYIT = re.compile(
+    r"^([(hvxkg$])(\d+),(\d+)(?:,-?\d+)?:(-?\d+),(-?\d+)(?::(-?\d+)(?:,(-?\d+),(-?\d+))?)?")
+
+# Dosya bulucu (o): nerede, ne kadar derin, neyi arar.
+BULUCU_UZANTILARI = (".pdf", ".epub", ".xps", ".oxps", ".cbz", ".mobi", ".fb2", ".tex",
+                     ".docx", ".docm", ".doc", ".rtf", ".odt")
+BULUCU_ATLA = {"AppData", "node_modules", "__pycache__", "site-packages", "Windows",
+               "Program Files", "Program Files (x86)", "ProgramData"}
+BULUCU_SINIR = 20000                # taranacak en cok dosya (buyuk diskte donmasin)
+
+
+def _bulanik_puan(desen: str, metin: str) -> float | None:
+    """Katlanmis `desen`, katlanmis `metin`e ne kadar uyuyor; uymuyorsa None.
+    Duz alt dize en iyisi (basta daha da iyi); yoksa harfler sirayla, yan
+    yana gelenler puanli (fzf'in kaba hali)."""
+    i = metin.find(desen)
+    if i >= 0:
+        return 1000 - i * 2 - len(metin) * 0.1 + (50 if i == 0 else 0)
+    puan, yer = 0.0, -1
+    for c in desen:
+        j = metin.find(c, yer + 1)
+        if j < 0:
+            return None
+        if j == yer + 1:
+            puan += 10
+        elif j == 0 or not metin[j - 1].isalnum():
+            puan += 6                        # sozcuk basi
+        yer = j
+    return puan - len(metin) * 0.1
+
+
 def veri_dizini() -> str:
     kok = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
     return os.path.join(kok, "rubric")
@@ -2326,6 +2390,18 @@ class Rubric(tk.Tk):
         self.tex_metin: tk.Text | None = None
         self.secim_karti: tk.Frame | None = None   # T / C'nin ortadaki karti
         self._word: dict | None = None     # suren Word -> PDF cevirisi (bkz. word_ac)
+        # otomatik yenileme: yol -> (mtime, boy) son bilinen; aday: bir kez
+        # degismis goruldu, yazma bitsin diye bir tur daha bekleniyor
+        self._izlenen: dict[str, tuple] = {}
+        self._izleme_aday: dict[str, tuple] = {}
+        self._izle_isi = None
+        # dosya bulucu (o)
+        self.bulucu: tk.Frame | None = None
+        self.bulucu_girdi: tk.Entry | None = None
+        self._bulucu_dosyalar: list[str] = []
+        self._bulucu_sonuclar: list[str] = []
+        self._bulucu_is = None
+        self._bulucu_zaman = 0.0
         self._secim_karti_secili = 0
         self._secim_satirlari: list[tuple] = []
         self._secim_karti_baslik = ""
@@ -2789,6 +2865,8 @@ class Rubric(tk.Tk):
         # sayfayi tutup kaydirir (fare_bas karar verir). Sag tik vurguyu siler.
         t.bind("<B1-Motion>", orada(self.fare_surukle))
         t.bind("<ButtonPress-1>", gec(self.fare_bas))
+        # Ctrl+tik: tex modunda PDF'ten kaynaga (SyncTeX); degilse duz tik
+        t.bind("<Control-Button-1>", gec(self._ctrl_tik))
         t.bind("<ButtonRelease-1>", orada(self.fare_birak))
         # Bos gezinme: taban bu bolme olur + baglantinin ustunde el imleci
         t.bind("<Motion>", fareyle(self._gezinme))
@@ -2821,8 +2899,20 @@ class Rubric(tk.Tk):
         self.ust_bar.bind("<Configure>", lambda e: self._ust_adi_sigdir())
         self.protocol("WM_DELETE_WINDOW", self.cik)
         self.tuval.focus_set()
+        self._izle_isi = self.after(1000, self._dosyalari_izle)
 
     # -- belge -------------------------------------------------------------
+
+    @staticmethod
+    def _belge_oku(yol: str):
+        """Belge bellege okunup oradan acilir: MuPDF dosyayi acik tutsaydi
+        Windows'ta baska programlar (pdflatex, tarayici, Word) ustune yazamaz,
+        otomatik yenileme de hic tetiklenmezdi. Cok buyuk dosya yine yoldan."""
+        uzanti = os.path.splitext(yol)[1].lower().lstrip(".")
+        if uzanti and os.path.getsize(yol) <= 200 * 1024 * 1024:
+            with open(yol, "rb") as f:
+                return pymupdf.open(stream=f.read(), filetype=uzanti)
+        return pymupdf.open(yol)
 
     def belgeyi_ac(self, yol: str, word: bool = True) -> None:
         yol = os.path.abspath(os.path.expanduser(yol.strip().strip('"')))
@@ -2836,7 +2926,7 @@ class Rubric(tk.Tk):
             self.bildir(self.m("bulunamadi", ne=yol), "hata")
             return
         try:
-            yeni = pymupdf.open(yol)
+            yeni = self._belge_oku(yol)
         except Exception as e:
             self.bildir(self.m("acilamadi", e=e), "hata")
             return
@@ -2890,6 +2980,7 @@ class Rubric(tk.Tk):
         self.ciz()
 
         kayit["goruldu"] = time.time()          # listeden dusecek belge buna gore secilir
+        self._izlenen[os.path.normcase(yol)] = self._dosya_imzasi(yol)
         self._listeye_ekle(yol)
         dusen = self._listeyi_kirp()
         self.oturumu_kaydet()
@@ -6789,6 +6880,7 @@ class Rubric(tk.Tk):
             "tex-modu":     self.tex_modu,
             "tex-derle":    self.tex_derle,
             "tex-kapat":    self.tex_kapat,
+            "tex-sync":     self.tex_ileri_sync,
             "ara-ileri":    lambda: self.komut_modu("/"),
             "ara-geri":     lambda: self.komut_modu("?"),
             "sonraki-bulgu": lambda: self.bulguya_git(self.arama_yonu),
@@ -7121,6 +7213,10 @@ class Rubric(tk.Tk):
         self.durumu_tazele()
 
     def ac(self) -> None:
+        """o: rubric'in kendi dosya bulucusu (Windows penceresi icinde Ctrl-O)."""
+        self.dosya_bulucu()
+
+    def _windows_ac(self) -> None:
         # Birden cok dosya secilebilir (Ctrl/Shift+tik): hepsi listeye girer,
         # sonuncusu acilir; digerleri <C-Left>/<C-Right> ile.
         yollar = filedialog.askopenfilenames(
@@ -7311,6 +7407,439 @@ class Rubric(tk.Tk):
         else:
             self.bildir(self.m("word_acilamadi", ad=os.path.basename(yol)), "hata")
 
+    # -- SyncTeX (tex modu) ----------------------------------------------------
+    #
+    # Derleme `-synctex=1` ile `<ad>.synctex.gz` de yazar. Ileri (Ctrl-J,
+    # editorde): imlecin satiri PDF'te nerede - oraya gidilir, bir an isaretlenir.
+    # Geri (Ctrl+tik, PDF'te): tiklanan yeri hangi satir uretti - editor oraya.
+    # Birim: sp * Unit * Magnification/1000, PDF noktasina 72/72.27/65536; y
+    # satirin taban cizgisi, sayfanin tepesinden (olculdu, 2026-09-23).
+
+    def _tex_sync_oku(self) -> dict | None:
+        t = self.tex
+        if t["sync"] is not None:
+            return t["sync"]
+        ad = os.path.splitext(os.path.basename(t["yol"]))[0]
+        try:
+            with gzip.open(os.path.join(self._tex_dizini(), ad + ".synctex.gz"), "rt",
+                           encoding="latin-1") as f:
+                metin = f.read()
+        except OSError:
+            return None
+        girdiler: dict[int, str] = {}
+        ham = []
+        birim, buyutme, xo, yo = 1.0, 1000.0, 0.0, 0.0
+        sayfa = -1
+        for satir in metin.splitlines():
+            if not satir:
+                continue
+            c = satir[0]
+            if c == "{":
+                try:
+                    sayfa = int(satir[1:]) - 1
+                except ValueError:
+                    pass
+            elif c in "(hvxkg$" and sayfa >= 0:
+                e = _SYNC_KAYIT.match(satir)
+                if e:
+                    g = e.groups()
+                    ham.append((sayfa, int(g[1]), int(g[2]), int(g[3]), int(g[4]),
+                                int(g[5] or 0), int(g[6] or 0), int(g[7] or 0), g[0]))
+            elif satir.startswith("Input:"):
+                _, no, dosya = satir.split(":", 2)
+                girdiler[int(no)] = dosya
+            elif satir.startswith("Unit:"):
+                birim = float(satir[5:])
+            elif satir.startswith("Magnification:"):
+                buyutme = float(satir[14:])
+            elif satir.startswith("X Offset:"):
+                xo = float(satir[9:])
+            elif satir.startswith("Y Offset:"):
+                yo = float(satir[9:])
+        f = birim * buyutme / 1000.0 * 72.0 / 72.27 / 65536.0
+        kayitlar = [(k[0], k[1], k[2], (k[3] + xo) * f, (k[4] + yo) * f, k[5] * f, k[6] * f,
+                     k[7] * f, k[8]) for k in ham if k[2] > 0]
+        dizin = os.path.dirname(t["yol"])
+        ana = {no for no, dosya in girdiler.items()
+               if self._ayni_yol(os.path.join(dizin, dosya), t["yol"])}
+        t["sync"] = {"girdiler": girdiler, "kayitlar": kayitlar, "ana": ana}
+        return t["sync"]
+
+    def _tex_pdf_bolmesi(self) -> Bolme | None:
+        """tex'in PDF'ini gosteren bolme; yoksa tex'in bolmesinde acar."""
+        hedef = self._tex_pdf_yolu()
+        for b in self.bolmeler:
+            if b.belge is not None and self._ayni_yol(b.pdf_yolu, hedef):
+                return b
+        if not os.path.exists(hedef):
+            return None
+        bolme = self.tex["bolme"] if self.tex["bolme"] in self.bolmeler else self.bolme
+        with self._bolmede(bolme):
+            self.belgeyi_ac(hedef)
+        return bolme
+
+    def tex_ileri_sync(self, _olay=None) -> str:
+        """Ctrl-J (editorde): imlecin satirini PDF'te gosterir."""
+        if not self.tex:
+            self.bildir(self.m("tex_kapali"), "uyari")
+            return "break"
+        sync = self._tex_sync_oku()
+        adaylar = [k for k in sync["kayitlar"] if k[1] in sync["ana"]] if sync else []
+        if not adaylar:
+            self.bildir(self.m("tex_sync_yok"), "uyari")
+            return "break"
+        satir = int(self.tex_metin.index("insert").split(".")[0])
+        # O satir kutu uretmediyse (bos satir, \usepackage) en yakin satir
+        en = min(abs(k[2] - satir) for k in adaylar)
+        secilen = [k for k in adaylar if abs(k[2] - satir) == en]
+        sayfa = min(k[0] for k in secilen)
+        secilen = [k for k in secilen if k[0] == sayfa]
+        r = pymupdf.Rect(min(k[3] for k in secilen), min(k[4] - max(k[6], 8) for k in secilen),
+                         max(k[3] + max(k[5], 2) for k in secilen), max(k[4] + k[7] + 2 for k in secilen))
+        bolme = self._tex_pdf_bolmesi()
+        if bolme is None:
+            return "break"
+        with self._bolmede(bolme):
+            if not self.belge or sayfa >= self.belge.page_count:
+                return "break"
+            self.zipla_kaydet()
+            self.sayfaya_git(sayfa, zipla=False)
+            yer = self.sayfa_yeri(sayfa)
+            if yer:
+                ust = self.aygit_dikdortgeni(sayfa, r, yer)[1]
+                self.ofset_ata(ust - self.gorunur_yukseklik() * 0.3)
+                self.capayi_isaretle(sayfa, r)
+            self.ciz()
+        return "break"
+
+    def _ctrl_tik(self, olay):
+        if self.tex_geri_sync(olay):
+            return "break"
+        return self.fare_bas(olay)
+
+    def tex_geri_sync(self, olay) -> bool:
+        """Ctrl+tik (PDF'te): tiklanan yeri ureten satira editorde gider.
+        Tex'in PDF'i degilse False (tik her zamanki isini yapar)."""
+        t = self.tex
+        if not t or not self.belge or not self._ayni_yol(self.pdf_yolu, self._tex_pdf_yolu()):
+            return False
+        x, y = self._tuval_noktasi(olay)
+        yer = self._noktadaki_sayfa(x, y)
+        if not yer:
+            return True
+        sync = self._tex_sync_oku()
+        if not sync:
+            self.bildir(self.m("tex_sync_yok"), "uyari")
+            return True
+        p = self._sayfa_noktasina(yer, x, y)
+        adaylar = [k for k in sync["kayitlar"] if k[0] == yer["no"]]
+        # Nokta kayitlari (h x k g $) satiri kesin soyler; satir kutusu "("
+        # paragrafin bittigi satiri. Once noktalar, yoksa kutular.
+        noktalar = [k for k in adaylar if k[8] != "("] or adaylar
+        if not noktalar:
+            return True
+
+        def uzaklik(k):
+            dx = max(k[3] - p.x, 0, p.x - (k[3] + k[5]))
+            return abs(k[4] - 3 - p.y) * 3 + dx          # yazinin ortasi tabanin ~3 pt ustu
+        k = min(noktalar, key=uzaklik)
+        dosya = sync["girdiler"].get(k[1], "")
+        if k[1] not in sync["ana"]:
+            self.bildir(self.m("tex_sync_baska", dosya=os.path.basename(dosya), satir=k[2]), "uyari")
+            return True
+        m = self.tex_metin
+        m.mark_set("insert", f"{k[2]}.0")
+        m.see("insert")
+        m.tag_remove("tex_sync", "1.0", "end")
+        m.tag_add("tex_sync", f"{k[2]}.0", f"{k[2]}.0 lineend")
+        self.after(900, lambda: self.tex_metin is not None and
+                   self.tex_metin.tag_remove("tex_sync", "1.0", "end"))
+        m.focus_set()
+        self.bildir(self.m("tex_sync_satir", satir=k[2]), "vurgu")
+        return True
+
+    # -- otomatik yenileme -----------------------------------------------------
+    #
+    # Saniyede bir, acik belgelerin (mtime, boy) imzasina bakilir. Degismisse
+    # bir tur daha beklenir (yazan program bitirsin), ayni kaldiysa kaldigi
+    # yerden yeniden yuklenir. Acilamazsa (yarim dosya) eski belge acik kalir:
+    # belgeyi_ac yenisini acmadan eskisini kapatmiyor.
+
+    @staticmethod
+    def _dosya_imzasi(yol: str) -> tuple | None:
+        try:
+            st = os.stat(yol)
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
+    def _dosyalari_izle(self) -> None:
+        self._izle_isi = self.after(1000, self._dosyalari_izle)
+        if not self.ayar["otomatik-yenile"] or self.mod == "sayfa-duzeni":
+            return
+        for b in list(self.bolmeler):
+            if b.belge is None or not b.pdf_yolu:
+                continue
+            anahtar = os.path.normcase(b.pdf_yolu)
+            imza = self._dosya_imzasi(b.pdf_yolu)
+            eski = self._izlenen.get(anahtar)
+            if imza is None or eski is None or imza == eski:
+                self._izleme_aday.pop(anahtar, None)
+                if eski is None and imza is not None:
+                    self._izlenen[anahtar] = imza
+                continue
+            if self._izleme_aday.get(anahtar) != imza:
+                self._izleme_aday[anahtar] = imza           # bir tur daha: yazma bitsin
+                continue
+            self._izleme_aday.pop(anahtar, None)
+            with self._bolmede(b):
+                self._yerinde_yenile()
+
+    def _yerinde_yenile(self) -> None:
+        """Bakilan belgeyi diskten yeniden okur; ofset, zoom, sigdirma kalir."""
+        yol, yer, zoom, sigdir = self.pdf_yolu, self.ofset(), self.zoom, self.sigdir
+        eski = self.belge
+        self.belgeyi_ac(yol)
+        if self.belge is eski:                 # acilamadi: imzayi al, bir daha deneme
+            self._izlenen[os.path.normcase(yol)] = self._dosya_imzasi(yol)
+            return
+        self.zoom, self.sigdir = zoom, sigdir
+        self.duzeni_hesapla()
+        self.ofset_ata(yer, ciz=True)
+        self.bildir(self.m("yenilendi", ad=os.path.basename(yol)), "vurgu")
+
+    # -- dosya bulucu (o) -------------------------------------------------------
+    #
+    # Ortada, yazdikca suzen bir liste: bos iken son acilanlar, yazinca son
+    # acilanlar + taranan klasorlerdeki belgeler bulanik eslenir. Tarama ayri
+    # is parcaciginda (Masaustu, Indirilenler, Belgeler, OneDrive; derinlik
+    # sinirli, BULUCU_SINIR dosya); 30 sn'den eskiyse acilista yenilenir.
+    # Ctrl-O Windows'un kendi penceresini acar.
+
+    def dosya_bulucu(self) -> None:
+        if self.mod == "palet":
+            self.paleti_kapat()
+        if self.bulucu is None:
+            self._bulucuyu_kur()
+        self._bulucu_renkleri()
+        self.bulucu_desen.set("")
+        if time.monotonic() - self._bulucu_zaman > 30:
+            self._bulucu_tara()
+        self._bulucu_suz()
+        en = max(420, min(980, self.winfo_width() - 80))
+        self.bulucu.place(relx=0.5, rely=0.42, anchor="center", width=en)
+        self.bulucu.lift()
+        self.bulucu_girdi.focus_set()
+
+    def _bulucuyu_kur(self) -> None:
+        k = self.bulucu = tk.Frame(self, bd=0, highlightthickness=1)
+        self.bulucu_ust = tk.Frame(k, bd=0)
+        self.bulucu_ust.pack(side="top", fill="x")
+        self.bulucu_baslik = tk.Label(self.bulucu_ust, text="$ open", bd=0, padx=16, pady=10)
+        self.bulucu_baslik.pack(side="left")
+        self.bulucu_istem = tk.Label(self.bulucu_ust, text=">", bd=0, padx=4)
+        self.bulucu_istem.pack(side="left")
+        self.bulucu_desen = tk.StringVar()
+        g = self.bulucu_girdi = tk.Entry(self.bulucu_ust, textvariable=self.bulucu_desen, bd=0,
+                                         highlightthickness=0, insertwidth=8)
+        g.pack(side="left", fill="x", expand=True, padx=(0, 16))
+        self.bulucu_cizgi = tk.Frame(k, height=1, bd=0)
+        self.bulucu_cizgi.pack(side="top", fill="x")
+        self.bulucu_liste = tk.Listbox(k, bd=0, highlightthickness=0, activestyle="none",
+                                       exportselection=False, takefocus=False, height=12)
+        self.bulucu_liste.pack(side="top", fill="both", expand=True, padx=8, pady=6)
+        self.bulucu_alt_cizgi = tk.Frame(k, height=1, bd=0)
+        self.bulucu_alt_cizgi.pack(side="top", fill="x")
+        self.bulucu_ipucu = tk.Label(k, anchor="w", bd=0, padx=16, pady=5)
+        self.bulucu_ipucu.pack(side="top", fill="x")
+
+        def tus(islev):
+            return lambda _e: (islev(), "break")[1]
+        self.bulucu_desen.trace_add("write", lambda *_: self._bulucu_suz())
+        g.bind("<Return>", tus(self._bulucu_ac))
+        g.bind("<Escape>", tus(self._bulucuyu_kapat))
+        for t in ("<Down>", "<Control-n>", "<Control-j>"):
+            g.bind(t, tus(lambda: self._bulucu_gez(1)))
+        for t in ("<Up>", "<Control-p>", "<Control-k>"):
+            g.bind(t, tus(lambda: self._bulucu_gez(-1)))
+        g.bind("<Next>", tus(lambda: self._bulucu_gez(10)))
+        g.bind("<Prior>", tus(lambda: self._bulucu_gez(-10)))
+        g.bind("<Control-o>", tus(lambda: (self._bulucuyu_kapat(), self._windows_ac())))
+        g.bind("<FocusOut>", lambda _e: self.after(60, self._bulucu_odagi_yokla))
+        self.bulucu_liste.bind("<ButtonRelease-1>", lambda _e: self.bulucu_girdi.focus_set())
+        self.bulucu_liste.bind("<Double-Button-1>", lambda _e: self._bulucu_ac())
+
+    def _bulucu_renkleri(self) -> None:
+        a = self.ayar
+        buyuk = (a["yazitipi"], a["yazitipi-boy"] + 4)
+        orta = (a["yazitipi"], a["yazitipi-boy"] + 2)
+        yt = (a["yazitipi"], a["yazitipi-boy"])
+        z = a["palet-zemin"]
+        self.bulucu.config(bg=z, highlightbackground=a["vurgu"], highlightcolor=a["vurgu"])
+        self.bulucu_ust.config(bg=z)
+        self.bulucu_baslik.config(bg=z, fg=a["vurgu"], font=buyuk)
+        self.bulucu_istem.config(bg=z, fg=a["vurgu"], font=buyuk)
+        self.bulucu_girdi.config(bg=z, fg=a["cubuk-on"], insertbackground=a["vurgu"], font=buyuk)
+        for c in (self.bulucu_cizgi, self.bulucu_alt_cizgi):
+            c.config(bg=a["palet-cerceve"])
+        self.bulucu_liste.config(bg=z, fg=a["cubuk-on"], selectbackground=a["panel-secili"],
+                                 selectforeground=a["vurgu"], font=orta)
+        self.bulucu_ipucu.config(bg=a["cubuk-zemin"], fg=a["sonuk"], font=yt)
+
+    def _bulucu_kokleri(self) -> list[tuple[str, int]]:
+        ev = os.path.expanduser("~")
+        kokler = [(os.path.join(ev, ad), 4) for ad in ("Desktop", "Downloads", "Documents", "OneDrive")]
+        for y in self._son_belgeler()[:20]:
+            kokler.append((os.path.dirname(y), 1))
+        if self.pdf_yolu and not os.path.normcase(self.pdf_yolu).startswith(
+                os.path.normcase(veri_dizini())):
+            kokler.append((os.path.dirname(self.pdf_yolu), 2))
+        gorulen, sonuc = set(), []
+        for kok, derin in kokler:
+            n = os.path.normcase(kok)
+            if n not in gorulen and os.path.isdir(kok):
+                gorulen.add(n)
+                sonuc.append((kok, derin))
+        return sonuc
+
+    def _bulucu_tara(self) -> None:
+        if self._bulucu_is is not None and self._bulucu_is.is_alive():
+            return
+        kokler = self._bulucu_kokleri()
+
+        def tara():
+            bulunan, gorulen = [], set()
+            for kok, derinlik in kokler:
+                yigin = [(kok, 0)]
+                while yigin and len(bulunan) < BULUCU_SINIR:
+                    dizin, derin = yigin.pop()
+                    try:
+                        girdiler = list(os.scandir(dizin))
+                    except OSError:
+                        continue
+                    for g in girdiler:
+                        ad = g.name
+                        if ad.startswith((".", "$", "~")) or ad in BULUCU_ATLA:
+                            continue
+                        try:
+                            if g.is_dir(follow_symlinks=False):
+                                if derin < derinlik:
+                                    yigin.append((g.path, derin + 1))
+                            elif ad.lower().endswith(BULUCU_UZANTILARI):
+                                n = os.path.normcase(g.path)
+                                if n not in gorulen:
+                                    gorulen.add(n)
+                                    bulunan.append(g.path)
+                        except OSError:
+                            pass
+            self._bulucu_dosyalar = bulunan        # tek atama: ana is parcacigi yarim liste gormez
+
+        self._bulucu_zaman = time.monotonic()
+        self._bulucu_is = threading.Thread(target=tara, name="bulucu", daemon=True)
+        self._bulucu_is.start()
+        self.after(150, self._bulucu_taramayi_bekle)
+
+    def _bulucu_taramayi_bekle(self) -> None:
+        if self._bulucu_is is not None and self._bulucu_is.is_alive():
+            self.after(150, self._bulucu_taramayi_bekle)
+            return
+        if self.bulucu is not None and self.bulucu.winfo_ismapped():
+            self._bulucu_suz()
+
+    def _son_belgeler(self) -> list[str]:
+        """durum.json'daki belgeler, en son bakilan once. Word cevirisi
+        yerine asil .docx; artik olmayanlar atlanir."""
+        kayitlar = []
+        onbellek = os.path.normcase(veri_dizini())
+        for yol, k in self.kalici.veri.items():
+            if yol.startswith("_") or not isinstance(k, dict):
+                continue
+            gercek = k.get("word-kaynagi") or yol
+            if os.path.normcase(gercek).startswith(onbellek):
+                continue
+            kayitlar.append((k.get("goruldu", 0), gercek))
+        kayitlar.sort(reverse=True)
+        sonuc, gorulen = [], set()
+        for _, yol in kayitlar:
+            n = os.path.normcase(yol)
+            if n not in gorulen and os.path.exists(yol):
+                gorulen.add(n)
+                sonuc.append(yol)
+            if len(sonuc) >= 60:
+                break
+        return sonuc
+
+    def _bulucu_suz(self) -> None:
+        if self.bulucu is None:
+            return
+        desen = katla(self.bulucu_desen.get().strip())
+        sonlar = self._son_belgeler()
+        son_kume = {os.path.normcase(y) for y in sonlar}
+        havuz = sonlar + [y for y in self._bulucu_dosyalar if os.path.normcase(y) not in son_kume]
+        if not desen:
+            secilen = havuz[:200]
+        else:
+            puanli = []
+            for y in havuz:
+                puan = _bulanik_puan(desen, katla(os.path.basename(y)))
+                if puan is None and ("\\" in desen or "/" in desen):
+                    puan = _bulanik_puan(desen.replace("/", "\\"), katla(y))
+                if puan is None:
+                    continue
+                if os.path.normcase(y) in son_kume:
+                    puan += 30
+                puanli.append((-puan, y))
+            puanli.sort()
+            secilen = [y for _, y in puanli[:200]]
+        self._bulucu_sonuclar = secilen
+        ev = os.path.expanduser("~")
+        liste = self.bulucu_liste
+        liste.delete(0, "end")
+        for y in secilen:
+            dizin = os.path.dirname(y)
+            if os.path.normcase(dizin).startswith(os.path.normcase(ev)):
+                dizin = "~" + dizin[len(ev):]
+            isaret = "*" if os.path.normcase(y) in son_kume else " "
+            liste.insert("end", f" {isaret} {os.path.basename(y):<42}  {dizin}")
+        if secilen:
+            liste.selection_set(0)
+            liste.see(0)
+        taraniyor = self._bulucu_is is not None and self._bulucu_is.is_alive()
+        sayi = self.m("bulucu_taraniyor") if taraniyor else \
+            self.m("bulucu_sayi", n=len(secilen), toplam=len(havuz))
+        self.bulucu_ipucu.config(text=f"{sayi}   {self.m('bulucu_ipucu')}")
+
+    def _bulucu_gez(self, adim: int) -> None:
+        liste = self.bulucu_liste
+        n = liste.size()
+        if not n:
+            return
+        secili = liste.curselection()
+        i = max(0, min(n - 1, (secili[0] if secili else 0) + adim))
+        liste.selection_clear(0, "end")
+        liste.selection_set(i)
+        liste.see(i)
+
+    def _bulucu_ac(self) -> None:
+        secili = self.bulucu_liste.curselection()
+        if not secili or secili[0] >= len(self._bulucu_sonuclar):
+            return
+        yol = self._bulucu_sonuclar[secili[0]]
+        self._bulucuyu_kapat()
+        self.belgeyi_ac(yol)
+
+    def _bulucuyu_kapat(self) -> None:
+        if self.bulucu is not None and self.bulucu.winfo_ismapped():
+            self.bulucu.place_forget()
+            self.tuval.focus_set()
+
+    def _bulucu_odagi_yokla(self) -> None:
+        """Odak bulucudan (girdi ya da liste) ciktiysa kapanir: disari tik."""
+        if self.bulucu is None or not self.bulucu.winfo_ismapped():
+            return
+        if self.focus_get() not in (self.bulucu_girdi, self.bulucu_liste):
+            self._bulucuyu_kapat()
+
     # -- tex modu (T) ------------------------------------------------------
     #
     # Tuval alaninin bir yaninda .tex kaynagi (tk.Text), kalaninda bolmeler.
@@ -7498,6 +8027,7 @@ class Rubric(tk.Tk):
                     "satir_sonu": "\r\n" if b"\r\n" in ham else "\n",
                     "kirli": False, "isi": None, "boya_isi": None, "surec": None,
                     "bekliyor": False, "basla": 0.0, "durum": None, "hata_satiri": None,
+                    "sync": None,
                     "bolme": self.bolme}
         m = self.tex_metin
         m.delete("1.0", "end")
@@ -7543,6 +8073,7 @@ class Rubric(tk.Tk):
         m.bind("<Control-s>", self.tex_derle)
         m.bind("<Control-S>", self.tex_derle)
         m.bind("<Control-w>", self.tex_kapat)
+        m.bind("<Control-j>", self.tex_ileri_sync)
         m.bind("<Escape>", lambda e: (self.tuval.focus_set(), "break")[1])
         m.bind("<Tab>", lambda e: (m.insert("insert", "  "), "break")[1])
         m.bind("<Configure>", lambda e: self._tex_numaralari_ciz())
@@ -7582,6 +8113,7 @@ class Rubric(tk.Tk):
         m.tag_config("tex_parantez", foreground=a["sonuk"])
         m.tag_config("tex_yorum", foreground=a["sonuk"])
         m.tag_config("tex_hata", background=a["panel-secili"])
+        m.tag_config("tex_sync", background=a["vurgu"], foreground=a["zemin"])
         self._tex_basligi()
         self._tex_numaralari_ciz()
 
@@ -7708,6 +8240,7 @@ class Rubric(tk.Tk):
             self.bildir(self.m("tex_motor_yok", motor=motor), "hata")
             return "break"
         komut = [exe, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error",
+                 "-synctex=1",
                  f"-output-directory={self._tex_dizini()}", os.path.basename(t["yol"])]
         try:
             t["surec"] = subprocess.Popen(
@@ -7742,6 +8275,7 @@ class Rubric(tk.Tk):
         ad = os.path.splitext(os.path.basename(t["yol"]))[0]
         uretilen = os.path.join(self._tex_dizini(), ad + ".pdf")
         if kod == 0 and os.path.exists(uretilen):
+            t["sync"] = None                    # yeni .synctex.gz: ilk sorguda okunur
             self._tex_hata_isaretle(None)
             if self._tex_pdfi_guncelle(uretilen):
                 t["durum"] = ("tamam", sure)
@@ -8164,7 +8698,8 @@ class Rubric(tk.Tk):
     def tus_geldi(self, olay) -> str | None:
         if self.focus_get() in (self.komut_girdi, self.liste, self.palet_girdi):
             return None
-        if self.focus_get() is not None and self.focus_get() in (self.tex_metin, self.secim_karti):
+        if self.focus_get() is not None and self.focus_get() in (self.tex_metin, self.secim_karti,
+                                                                 self.bulucu_girdi):
             return None                           # tex editoru / secim karti kendi tuslarini alir
         ad = self.tus_adini_coz(olay)
         if not ad:
@@ -8435,6 +8970,9 @@ class Rubric(tk.Tk):
         if self._ipc_isi is not None:           # tek-pencere yoklamasi da dursun
             self.after_cancel(self._ipc_isi)
             self._ipc_isi = None
+        if self._izle_isi is not None:          # otomatik yenileme dursun
+            self.after_cancel(self._izle_isi)
+            self._izle_isi = None
         if self.tex:                            # tex: yazilan kaydedilsin, latex dursun
             self._tex_durdur()
         if self._baski is not None:             # suren yazdirma: is parcacigi belgeyi iptal etsin

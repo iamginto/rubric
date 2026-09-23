@@ -67,6 +67,7 @@ set en-cok-yakinlastirma 10.0
 set ters-renk            false    # gece modu ile acilsin istersen true
 set gece-modu            tema     # tema: sayfa temanin zemin + yazi rengine boyanir | ters: duz tersleme
 set son-konum            true     # dosyayi kaldigi yerden ac
+set otomatik-yenile      true     # acik belge diskte degisince kaldigi yerden yeniden yukle
 set oturum               true     # kapatinca acik belgeleri hatirla, acilista geri getir
 set son-belgeler         10       # belge listesinin siniri (<C-Left>/<C-Right>, B);
                                   # dolunca en uzun suredir bakilmayan cikar
@@ -117,7 +118,8 @@ set windows-basligi      false    # Windows'un kendi beyaz baslik cubugu
 # Tex modu (T: yeni dosya / dosya ac; ya da :tex <dosya.tex>): bir yanda
 # kaynak, yaninda canli PDF.
 # Yazmayi birakinca kaynak kaydedilir ve derlenir; PDF kaynagin yanina yazilir.
-# Editorde Ctrl-S hemen derler, Esc PDF'e gecer, T geri getirir, Ctrl-W kapatir.
+# Editorde Ctrl-S hemen derler, Ctrl-J satiri PDF'te gosterir, PDF'te Ctrl+tik
+# kaynaktaki satira goturur (SyncTeX), Esc PDF'e gecer, T geri getirir, Ctrl-W kapatir.
 # ---------------------------------------------------------------------------
 set tex-motoru           pdflatex # pdflatex | xelatex | lualatex (PATH'te olmali)
 set tex-yan              sol      # editor hangi yanda: sol | sag
@@ -164,7 +166,7 @@ set baslik-bicimi  {ad} [{sayfa}/{toplam}] - rubric
 #   baslik-cubugu dil
 #   vurgu-kalemi vurgular vurgu-geri-al vurgulari-aktar
 #   sayfa-duzeni birlestir karartma-kalemi karartmayi-uygula ustveri-temizle
-#   kopyala tex-modu tex-derle tex-kapat donustur
+#   kopyala tex-modu tex-derle tex-sync tex-kapat donustur
 #   ara-ileri ara-geri sonraki-bulgu onceki-bulgu vurguyu-kapat
 #   komut-modu cik geri-zipla ileri-zipla yeniden-yukle ac
 #   sonraki-belge onceki-belge belgeyi-kapat kapanani-ac belgeler
