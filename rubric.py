@@ -502,6 +502,9 @@ VARSAYILAN_TUSLAR = {
     "U": "geri-getir",     "<C-z>": "geri-getir",
     # <Delete>: silme kipi - acikken tiklanan not ya da vurgu silinir.
     "<Delete>": "silme-kipi",
+    # S: sayfa duzeni (kucuk resimler; tasi, sil, dondur, ayir). X: karartma
+    # kalemi - x'in buyugu, "ustunu ciz". Ikisi de yeni dosyaya yazar.
+    "S": "sayfa-duzeni",    "X": "karartma-kalemi",
     "M": "yer-imi-koy",     "b": "yer-imleri",
     # <C-S-p> degil: birden cok klavye dili kuruluyken Windows Ctrl+Shift'i
     # dil degistirmeye ayirabiliyor (bkz. yukarida <C-e>).
@@ -577,10 +580,15 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgu-kalemi":   "highlighter: drag, then Enter or a colour key (Shift+drag always)",
         "vurgular":       "highlight list - Enter go, x delete",
         "vurgu-geri-al":  "undo the last highlight add / delete",
-        "vurgulari-aktar": "write a highlighted copy (<name>-highlighted.pdf, original untouched)",
+        "vurgulari-aktar": "embed highlights and notes as PDF comments (<name>-highlighted.pdf, original untouched)",
         "not-ekle":       "note at the cursor: hover to read it, i to edit, empty text deletes",
         "geri-getir":     "bring back the last thing you deleted (note or highlight)",
         "silme-kipi":     "delete mode: click a note or highlight to remove it, Esc leaves",
+        "sayfa-duzeni":   "organize pages: move, delete, rotate, extract - w writes a new file",
+        "birlestir":      "merge: append chosen PDFs to this one (<name>-merged.pdf)",
+        "karartma-kalemi": "redact pen: drag a box or click a word, Enter writes the redacted copy",
+        "karartmayi-uygula": "write the redacted copy now (<name>-redacted.pdf, text really removed)",
+        "ustveri-temizle": "strip metadata: author, software, dates, XMP (<name>-clean.pdf)",
 
         "ac":             "pick a file and open it",
         "yeniden-yukle":  "reload the document from disk",
@@ -651,10 +659,15 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgu-kalemi":   "vurgu kalemi: sürükle seç, sonra Enter ya da renk tuşu (Shift+sürükle her zaman)",
         "vurgular":       "vurgu listesi - Enter git, x sil",
         "vurgu-geri-al":  "son vurgu ekleme / silmesini geri al",
-        "vurgulari-aktar": "vurgulu kopya PDF yaz (<ad>-vurgulu.pdf, aslı değişmez)",
+        "vurgulari-aktar": "vurgu ve notları PDF yorumu olarak göm (<ad>-vurgulu.pdf, aslı değişmez)",
         "not-ekle":       "imlecin oldugu yere not: üstüne gelince okunur, i düzenler, boş metin siler",
         "geri-getir":     "en son sildiğin şeyi geri getir (not ya da vurgu)",
         "silme-kipi":     "silme kipi: tıkladığın notu ya da vurguyu siler, Esc çıkar",
+        "sayfa-duzeni":   "sayfa düzeni: taşı, sil, döndür, ayır - w yeni dosyaya yazar",
+        "birlestir":      "birleştir: seçtiğin PDF'leri bunun arkasına ekle (<ad>-birlesik.pdf)",
+        "karartma-kalemi": "karartma kalemi: kutu sürükle ya da kelimeye tıkla, Enter karartılmış kopyayı yazar",
+        "karartmayi-uygula": "karartılmış kopyayı şimdi yaz (<ad>-karartilmis.pdf, metin gerçekten silinir)",
+        "ustveri-temizle": "üstverileri sil: yazar, program, tarihler, XMP (<ad>-temiz.pdf)",
 
         "ac":             "dosya seçip aç",
         "yeniden-yukle":  "belgeyi diskten yeniden oku",
@@ -725,10 +738,15 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgu-kalemi":   "Textmarker: ziehen wählt, dann Enter oder Farbtaste (Shift+Ziehen immer)",
         "vurgular":       "Markierungsliste - Enter springen, x löschen",
         "vurgu-geri-al":  "letztes Markieren / Löschen rückgängig machen",
-        "vurgulari-aktar": "markierte Kopie schreiben (<Name>-markiert.pdf, Original bleibt)",
+        "vurgulari-aktar": "Markierungen und Notizen als PDF-Kommentare einbetten (<Name>-markiert.pdf, Original bleibt)",
         "not-ekle":       "Notiz an der Zeigerposition: zum Lesen darauf zeigen, i bearbeitet, leer löscht",
         "geri-getir":     "zuletzt Gelöschtes zurückholen (Notiz oder Markierung)",
         "silme-kipi":     "Löschmodus: Klick entfernt Notiz oder Markierung, Esc beendet",
+        "sayfa-duzeni":   "Seiten ordnen: verschieben, löschen, drehen, herauslösen - w schreibt neue Datei",
+        "birlestir":      "zusammenfügen: gewählte PDFs hinten anhängen (<Name>-zusammen.pdf)",
+        "karartma-kalemi": "Schwärzstift: Rahmen ziehen oder Wort klicken, Enter schreibt die geschwärzte Kopie",
+        "karartmayi-uygula": "geschwärzte Kopie jetzt schreiben (<Name>-geschwaerzt.pdf, Text wirklich entfernt)",
+        "ustveri-temizle": "Metadaten entfernen: Autor, Programm, Daten, XMP (<Name>-bereinigt.pdf)",
 
         "ac":             "Datei auswählen und öffnen",
         "yeniden-yukle":  "Dokument neu von der Festplatte laden",
@@ -779,6 +797,8 @@ KOMUT_GRUPLARI = [
     ("dosya", ["ac", "belgeler", "sonraki-belge", "onceki-belge", "belgeyi-kapat",
                "kapanani-ac", "yeniden-yukle", "yazdir", "yazdir-sec", "komut-modu",
                "cik"]),
+    ("pdf araclari", ["sayfa-duzeni", "birlestir", "karartma-kalemi",
+                      "karartmayi-uygula", "ustveri-temizle"]),
     ("bolmeler", ["bolme-saga", "bolme-sola", "bolme-gec", "bolme-tek"]),
     ("ayarlar", ["geri-acma-siniri", "yazici", "tepsi"]),
     # Temalar gibi: palette tek satir, Enter renk listesini acar; tusu yok.
@@ -792,16 +812,18 @@ GRUP_ADLARI: dict[str, dict[str, str]] = {
     "en": {"gezinme": "navigation", "yakinlastirma ve duzen": "zoom and layout",
            "ekran": "display", "arama": "search", "isaret ve ziplama": "marks and jumps",
            "vurgu": "highlights", "dosya": "file", "ayarlar": "settings", "temalar": "themes", "bolmeler": "panes",
+           "pdf araclari": "pdf tools",
            "vurgu renkleri": "highlight colours"},
     "tr": {"gezinme": "gezinme", "yakinlastirma ve duzen": "yakınlaştırma ve düzen",
            "ekran": "ekran", "arama": "arama", "isaret ve ziplama": "işaret ve zıplama",
            "vurgu": "vurgu", "dosya": "dosya", "ayarlar": "ayarlar", "temalar": "temalar",
-           "bolmeler": "bölmeler",
+           "bolmeler": "bölmeler", "pdf araclari": "pdf araçları",
            "vurgu renkleri": "vurgu renkleri"},
     "de": {"gezinme": "Navigation", "yakinlastirma ve duzen": "Zoom und Layout",
            "ekran": "Anzeige", "arama": "Suche", "isaret ve ziplama": "Marken und Sprünge",
            "vurgu": "Markierungen", "dosya": "Datei", "ayarlar": "Einstellungen",
-           "temalar": "Themen", "vurgu renkleri": "Markerfarben", "bolmeler": "Bereiche"},
+           "temalar": "Themen", "vurgu renkleri": "Markerfarben", "bolmeler": "Bereiche",
+           "pdf araclari": "PDF-Werkzeuge"},
 }
 
 # Arayuzun geri kalan metni. Ikili deger (tekil, cogul): hangisi oldugunu
@@ -846,7 +868,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgulandi":       "highlighted: {metin}   (u: undo)",
         "vurgu_silindi":    "highlight deleted   (u: undo)",
         "belgede_vurgu_yok": "no highlights in this document  (v: pen, Shift+drag)",
-        "aktarilacak_yok":  "no highlights to export",
+        "aktarilacak_yok":  "no highlights or notes to export",
         "aktarilamadi":     "export failed: {e}",
         "vurgulu_ek":       "highlighted",
         "vurgu_n":          ("{n} highlight", "{n} highlights"),
@@ -947,6 +969,51 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "mod_icindekiler":  "[toc]",
         "mod_vurgular":     "[highlights]",
         "mod_kalem":        "[pen]",
+        "pdf_gerek":        "this works on PDFs only",
+        "not_n":            ("{n} note", "{n} notes"),
+        "birlestir_baslik": "PDFs to append after this document",
+        "birlesik_ek":      "merged",
+        "birlestirildi":    "{n} files merged, {sayfalar} -> {ad}",
+        "temiz_ek":         "clean",
+        "ustveri_yok":      "no metadata found - nothing written",
+        "ustveri_silindi":  "removed: {alanlar} -> {ad}",
+        "alan_title":       "title",
+        "alan_author":      "author",
+        "alan_subject":     "subject",
+        "alan_keywords":    "keywords",
+        "alan_creator":     "creator app",
+        "alan_producer":    "producer",
+        "alan_creationDate": "created date",
+        "alan_modDate":     "modified date",
+        "alan_trapped":     "trapped",
+        "alan_xmp":         "XMP",
+        "alan_yorum_yazari": ("{n} comment author", "{n} comment authors"),
+        "karartma_acik":    "redact pen: drag a box or click a word - Enter writes the copy, Ctrl-Z drops the last box, Esc puts it down",
+        "karartma_kapali":  "redact pen off",
+        "karartma_bekliyor": "redact pen off - {n} still marked, X then Enter writes them",
+        "karartma_eklendi": "{n} marked for redaction - Enter writes the copy",
+        "karartma_kelime_yok": "no word here - drag a box instead",
+        "karartma_yok":     "nothing marked for redaction (X: redact pen)",
+        "karartma_geri":    "redaction mark removed",
+        "karartilmis_ek":   "redacted",
+        "karartildi":       "{n} areas blacked out, text removed -> {ad}",
+        "karartma_sizdi":   "WARNING: text still readable in {n} area(s) of {ad}",
+        "karart_bulundu":   "'{desen}': {n} matches marked - Enter writes the copy",
+        "karart_kullanim":  "usage: :redact <word>",
+        "karart_araniyor":  "searching '{desen}' to redact... {n}/{toplam}",
+        "mod_karartma":     "[redact]",
+        "mod_sayfa_duzeni": "[pages]",
+        "duzen_baslik":     "$ pages  {ad}  {n}",
+        "duzen_ipucu":      "hjkl move  HJKL carry  x delete  r/R rotate  v select  e extract  u undo  w write  q close",
+        "duzen_degisti":    "[modified]",
+        "duzen_ek":         "arranged",
+        "ayri_ek":          "extract",
+        "duzen_yazildi":    "{sayfalar} -> {ad}",
+        "duzen_degismedi":  "nothing changed - nothing written",
+        "duzen_hepsi":      "can't delete every page",
+        "duzen_kaydedilmedi": "unsaved changes - q again drops them, w writes",
+        "duzen_silindi":    "{sayfalar} deleted   (u: undo)",
+        "duzen_geri_yok":   "nothing to undo",
         "bekle_isaret-koy": "[set mark]",
         "bekle_isarete-git": "[go to mark]",
         "belge_yok":        "no document",
@@ -1025,7 +1092,6 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgulandi":       "vurgulandı: {metin}   (u: geri al)",
         "vurgu_silindi":    "vurgu silindi   (u: geri al)",
         "belgede_vurgu_yok": "bu belgede vurgu yok  (v: kalem, Shift+sürükle)",
-        "aktarilacak_yok":  "aktarılacak vurgu yok",
         "aktarilamadi":     "aktarılamadı: {e}",
         "vurgulu_ek":       "vurgulu",
         "vurgu_n":          "{n} vurgu",
@@ -1123,6 +1189,53 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "mod_icindekiler":  "[içindekiler]",
         "mod_vurgular":     "[vurgular]",
         "mod_kalem":        "[kalem]",
+        "pdf_gerek":        "bu yalnızca PDF'te çalışır",
+        "not_n":            "{n} not",
+        "aktarildi":        "{vurgular} -> {ad}",
+        "aktarilacak_yok":  "aktarılacak vurgu ya da not yok",
+        "birlestir_baslik": "bu belgenin arkasına eklenecek PDF'ler",
+        "birlesik_ek":      "birlesik",
+        "birlestirildi":    "{n} dosya birleşti, {sayfalar} -> {ad}",
+        "temiz_ek":         "temiz",
+        "ustveri_yok":      "üstveri bulunamadı - bir şey yazılmadı",
+        "ustveri_silindi":  "silindi: {alanlar} -> {ad}",
+        "alan_title":       "başlık",
+        "alan_author":      "yazar",
+        "alan_subject":     "konu",
+        "alan_keywords":    "anahtar sözcükler",
+        "alan_creator":     "oluşturan program",
+        "alan_producer":    "üretici",
+        "alan_creationDate": "oluşturma tarihi",
+        "alan_modDate":     "değiştirme tarihi",
+        "alan_trapped":     "trapped",
+        "alan_xmp":         "XMP",
+        "alan_yorum_yazari": "{n} yorum yazarı",
+        "karartma_acik":    "karartma kalemi: kutu sürükle ya da kelimeye tıkla - Enter kopyayı yazar, Ctrl-Z son kutuyu atar, Esc bırakır",
+        "karartma_kapali":  "karartma kalemi kapalı",
+        "karartma_bekliyor": "karartma kalemi kapalı - {n} işaret duruyor, X sonra Enter yazar",
+        "karartma_eklendi": "{n} alan işaretli - Enter karartılmış kopyayı yazar",
+        "karartma_kelime_yok": "burada kelime yok - kutu sürükle",
+        "karartma_yok":     "karartılacak bir şey işaretlenmedi (X: karartma kalemi)",
+        "karartma_geri":    "karartma işareti kaldırıldı",
+        "karartilmis_ek":   "karartilmis",
+        "karartildi":       "{n} alan karartıldı, metin silindi -> {ad}",
+        "karartma_sizdi":   "DİKKAT: {ad} içinde {n} alanda metin hâlâ okunuyor",
+        "karart_bulundu":   "'{desen}': {n} eşleşme işaretlendi - Enter kopyayı yazar",
+        "karart_kullanim":  "kullanım: :karart <kelime>",
+        "karart_araniyor":  "karartmak için '{desen}' aranıyor... {n}/{toplam}",
+        "mod_karartma":     "[karartma]",
+        "mod_sayfa_duzeni": "[sayfalar]",
+        "duzen_baslik":     "$ sayfalar  {ad}  {n}",
+        "duzen_ipucu":      "hjkl gez  HJKL taşı  x sil  r/R döndür  v seç  e ayır  u geri  w yaz  q kapat",
+        "duzen_degisti":    "[değişti]",
+        "duzen_ek":         "duzenli",
+        "ayri_ek":          "secilen",
+        "duzen_yazildi":    "{sayfalar} -> {ad}",
+        "duzen_degismedi":  "değişiklik yok - bir şey yazılmadı",
+        "duzen_hepsi":      "bütün sayfalar silinemez",
+        "duzen_kaydedilmedi": "kaydedilmemiş değişiklik - yine q atar, w yazar",
+        "duzen_silindi":    "{sayfalar} silindi   (u: geri al)",
+        "duzen_geri_yok":   "geri alınacak bir şey yok",
         "bekle_isaret-koy": "[işaret koy]",
         "bekle_isarete-git": "[işarete git]",
         "belge_yok":        "belge yok",
@@ -1198,7 +1311,6 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "vurgulandi":       "markiert: {metin}   (u: rückgängig)",
         "vurgu_silindi":    "Markierung gelöscht   (u: rückgängig)",
         "belgede_vurgu_yok": "keine Markierungen in diesem Dokument  (v: Stift, Shift+Ziehen)",
-        "aktarilacak_yok":  "keine Markierungen zum Exportieren",
         "aktarilamadi":     "Export fehlgeschlagen: {e}",
         "vurgulu_ek":       "markiert",
         "vurgu_n":          ("{n} Markierung", "{n} Markierungen"),
@@ -1298,6 +1410,53 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "mod_icindekiler":  "[Inhalt]",
         "mod_vurgular":     "[Markierungen]",
         "mod_kalem":        "[Stift]",
+        "pdf_gerek":        "das geht nur mit PDFs",
+        "not_n":            ("{n} Notiz", "{n} Notizen"),
+        "aktarildi":        "{vurgular} -> {ad}",
+        "aktarilacak_yok":  "keine Markierungen oder Notizen zum Exportieren",
+        "birlestir_baslik": "PDFs, die hinten angehängt werden",
+        "birlesik_ek":      "zusammen",
+        "birlestirildi":    "{n} Dateien zusammengefügt, {sayfalar} -> {ad}",
+        "temiz_ek":         "bereinigt",
+        "ustveri_yok":      "keine Metadaten gefunden - nichts geschrieben",
+        "ustveri_silindi":  "entfernt: {alanlar} -> {ad}",
+        "alan_title":       "Titel",
+        "alan_author":      "Autor",
+        "alan_subject":     "Thema",
+        "alan_keywords":    "Stichwörter",
+        "alan_creator":     "Erstellerprogramm",
+        "alan_producer":    "Produzent",
+        "alan_creationDate": "Erstelldatum",
+        "alan_modDate":     "Änderungsdatum",
+        "alan_trapped":     "Trapped",
+        "alan_xmp":         "XMP",
+        "alan_yorum_yazari": ("{n} Kommentarautor", "{n} Kommentarautoren"),
+        "karartma_acik":    "Schwärzstift: Rahmen ziehen oder Wort klicken - Enter schreibt die Kopie, Strg-Z nimmt den letzten zurück, Esc legt ihn weg",
+        "karartma_kapali":  "Schwärzstift aus",
+        "karartma_bekliyor": "Schwärzstift aus - {n} noch markiert, X dann Enter schreibt sie",
+        "karartma_eklendi": "{n} zum Schwärzen markiert - Enter schreibt die Kopie",
+        "karartma_kelime_yok": "hier ist kein Wort - Rahmen ziehen",
+        "karartma_yok":     "nichts zum Schwärzen markiert (X: Schwärzstift)",
+        "karartma_geri":    "Schwärzungsmarke entfernt",
+        "karartilmis_ek":   "geschwaerzt",
+        "karartildi":       "{n} Bereiche geschwärzt, Text entfernt -> {ad}",
+        "karartma_sizdi":   "WARNUNG: in {ad} ist in {n} Bereich(en) noch Text lesbar",
+        "karart_bulundu":   "'{desen}': {n} Treffer markiert - Enter schreibt die Kopie",
+        "karart_kullanim":  "Aufruf: :schwaerzen <Wort>",
+        "karart_araniyor":  "suche '{desen}' zum Schwärzen... {n}/{toplam}",
+        "mod_karartma":     "[Schwärzen]",
+        "mod_sayfa_duzeni": "[Seiten]",
+        "duzen_baslik":     "$ Seiten  {ad}  {n}",
+        "duzen_ipucu":      "hjkl bewegen  HJKL tragen  x löschen  r/R drehen  v wählen  e herauslösen  u zurück  w schreiben  q schließen",
+        "duzen_degisti":    "[geändert]",
+        "duzen_ek":         "geordnet",
+        "ayri_ek":          "auszug",
+        "duzen_yazildi":    "{sayfalar} -> {ad}",
+        "duzen_degismedi":  "nichts geändert - nichts geschrieben",
+        "duzen_hepsi":      "nicht alle Seiten löschbar",
+        "duzen_kaydedilmedi": "ungespeicherte Änderungen - nochmal q verwirft, w schreibt",
+        "duzen_silindi":    "{sayfalar} gelöscht   (u: rückgängig)",
+        "duzen_geri_yok":   "nichts rückgängig zu machen",
         "bekle_isaret-koy": "[Marke setzen]",
         "bekle_isarete-git": "[zur Marke]",
         "belge_yok":        "kein Dokument",
@@ -1405,6 +1564,9 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "geri-getir": "restore",
         "silme-kipi": "delete-mode",
         "vurgu-geri-al": "undo-highlight", "vurgulari-aktar": "export-highlights",
+        "sayfa-duzeni": "organize-pages", "birlestir": "merge",
+        "karartma-kalemi": "redact-pen", "karartmayi-uygula": "apply-redaction",
+        "ustveri-temizle": "strip-metadata",
         "ac": "open-file", "yeniden-yukle": "reload", "komut-modu": "command-line",
         "cik": "quit",
         "sonraki-belge": "next-doc", "onceki-belge": "prev-doc",
@@ -1440,6 +1602,9 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "geri-getir": "geri-getir",
         "silme-kipi": "silme-kipi",
         "vurgu-geri-al": "vurgu-geri-al", "vurgulari-aktar": "vurguları-aktar",
+        "sayfa-duzeni": "sayfa-düzeni", "birlestir": "birleştir",
+        "karartma-kalemi": "karartma-kalemi", "karartmayi-uygula": "karartmayı-uygula",
+        "ustveri-temizle": "üstveri-temizle",
         "ac": "aç", "yeniden-yukle": "yeniden-yükle", "komut-modu": "komut-satırı",
         "cik": "çık",
         "sonraki-belge": "sonraki-belge", "onceki-belge": "önceki-belge",
@@ -1476,6 +1641,9 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "silme-kipi": "löschmodus",
         "vurgu-geri-al": "markierung-rückgängig",
         "vurgulari-aktar": "markierungen-exportieren",
+        "sayfa-duzeni": "seiten-ordnen", "birlestir": "zusammenfügen",
+        "karartma-kalemi": "schwärzstift", "karartmayi-uygula": "schwärzung-anwenden",
+        "ustveri-temizle": "metadaten-entfernen",
         "ac": "öffnen", "yeniden-yukle": "neu-laden", "komut-modu": "befehlszeile",
         "cik": "beenden",
         "sonraki-belge": "nächstes-dokument", "onceki-belge": "voriges-dokument",
@@ -1907,6 +2075,8 @@ BOLME_ALANLARI = (
     "vurgular", "_vurgu_xref", "vurgu_gecmisi", "kalem", "silme_kipi",
     "_secim", "_kelimeler",
     "_bekleyen_vurgu",
+    # karartma (X)
+    "karartma_acik", "karartmalar", "_karartma_cizimi",
     # kenar notlari
     "notlar", "_imlecteki_not", "_duzenlenen_not", "geri_yigini",
     # baglantilar
@@ -2000,6 +2170,8 @@ class Rubric(tk.Tk):
         self._baski: dict | None = None
 
         self.komutlar = self._komut_tablosu()
+        self._duzen = None              # sayfa duzeni (S) acikken durumu
+        self._karart_isi = None         # suren :karart taramasi
         self._arayuzu_kur()
         self._baglantilari_kur()
         self._ust_bari_yerlestir()
@@ -2458,6 +2630,8 @@ class Rubric(tk.Tk):
             self.bildir(self.m("acilamadi", e=e), "hata")
             return
 
+        if self.mod == "sayfa-duzeni":     # kucuk resimler eski belgeye bakiyor
+            self._duzeni_kapat()
         if self.belge is not None:
             self.konumu_kaydet()
             self.belge.close()
@@ -2477,6 +2651,8 @@ class Rubric(tk.Tk):
                           if isinstance(v, (list, tuple)) and len(v) == 2}
         self._secim = None
         self._bekleyen_vurgu = None
+        self.karartmalar = []
+        self._karartma_cizimi = None
         self._kelimeler = {}
         self._baglantilar = {}
         self._satir_metinleri = {}
@@ -2597,6 +2773,11 @@ class Rubric(tk.Tk):
             self._kelimeler = {}        # sayfa -> kelime kutulari
             # Birakilan secim renk bekler: Enter varsayilan, renk tusu o renk, Esc birakir.
             self._bekleyen_vurgu = None
+
+            # karartma (X): yeni dosyaya yazilana kadar yalnizca bellekte
+            self.karartma_acik = False
+            self.karartmalar = []       # {sayfa, dik}
+            self._karartma_cizimi = None  # suren kutu surukleme
 
             # kenar notlari (i)
             self.notlar = []            # durum.json'daki kayitlarin kendisi
@@ -3455,6 +3636,7 @@ class Rubric(tk.Tk):
         self.aktif_sayfayi_sapta(ust)
         self.bulgulari_ciz(gorunur)
         self.notlari_ciz(gorunur)
+        self.karartmalari_ciz(gorunur)
         if self.baglantilar_acik or self._baglanti_cizili:
             self.baglantilari_ciz(gorunur)
         if self._bekleyen_vurgu:            # yeni islenen sayfanin ustunde kalsin
@@ -3913,9 +4095,10 @@ class Rubric(tk.Tk):
     def vurguyu_kapat(self) -> None:
         self._aramayi_birak()
         self.tuval.delete("bulgu")
-        if self.kalem or self.silme_kipi:   # Esc kalemi ve silme kipini birakir
+        if self.kalem or self.silme_kipi or self.karartma_acik:   # Esc kalemleri ve silme kipini birakir
             self.kalem = False
             self._silme_kipini_kapat()
+            self._karartma_kalemini_birak()
             self.tuval.config(cursor="")
         self.gecici_ileti = ""
         self.durumu_tazele()
@@ -4260,6 +4443,14 @@ class Rubric(tk.Tk):
                     continue
                 self._not_sil(nesne, gecmise=False)
                 self.bildir(self.m("not_geri_alindi"), "vurgu")
+            elif islem == "karartma-ekle":
+                kalan = [k for k in nesne if k in self.karartmalar]
+                if not kalan:
+                    continue
+                for k in kalan:
+                    self.karartmalar.remove(k)
+                self.karartmalari_ciz()
+                self.bildir(self.m("karartma_geri"), "vurgu")
             elif islem == "not-duzenle":
                 if nesne not in self.notlar:
                     continue
@@ -4297,6 +4488,7 @@ class Rubric(tk.Tk):
         self.kalem = not self.kalem
         if self.kalem:
             self._silme_kipini_kapat()      # ikisi ayni anda anlamsiz
+            self._karartma_kalemini_birak()
         self.tuval.config(cursor="xterm" if self.kalem else "")
         self.bildir(self.m("kalem_acik" if self.kalem else "kalem_kapali"), "vurgu")
 
@@ -4323,6 +4515,7 @@ class Rubric(tk.Tk):
             return
         self.silme_kipi = True
         self.kalem = False                  # ikisi ayni anda anlamsiz
+        self._karartma_kalemini_birak()
         # Sistem imleci ok olarak kalir: "bu tik siler" bilgisini okun ucuna
         # cizdigimiz x veriyor (bkz. _silme_imlecini_ciz).
         self.tuval.config(cursor="")
@@ -4562,6 +4755,9 @@ class Rubric(tk.Tk):
         if self.silme_kipi:
             self._silme_tiki(*self._tuval_noktasi(olay))
             return
+        if self.karartma_acik:
+            self._karartma_basla(*self._tuval_noktasi(olay))
+            return
         self._baglanti_adayi = None
         if self.belge and self.belge.is_pdf and (self.kalem or olay.state & 0x1):
             self.secim_basla(olay)
@@ -4575,6 +4771,9 @@ class Rubric(tk.Tk):
             self.surukle_basla(olay)
 
     def fare_surukle(self, olay) -> None:
+        if self._karartma_cizimi is not None:
+            self._karartma_surukle(*self._tuval_noktasi(olay))
+            return
         if self._secim is not None:
             self.secim_surukle(olay)
             return
@@ -4584,6 +4783,9 @@ class Rubric(tk.Tk):
         self.surukle(olay)
 
     def fare_birak(self, olay) -> None:
+        if self._karartma_cizimi is not None:
+            self._karartma_bitir()
+            return
         if self._secim is not None:
             self.secim_bitir(olay)
             return
@@ -4636,27 +4838,657 @@ class Rubric(tk.Tk):
         self.ofset_ata(d[1] - self.gorunur_yukseklik() * 0.35)
         self.ciz()
 
-    def vurgulari_aktar(self) -> None:
+    # -- PDF araclari -------------------------------------------------------
+    #
+    # vurgulari-aktar, birlestir, ustveri-temizle, karartma ve sayfa duzeni
+    # ayni kurala uyar: bakilan belgenin **diskteki** halinden bir kopya
+    # acilir, is onun ustunde yapilir ve `<ad>-<ek>.pdf` diye YENI bir dosyaya
+    # yazilir. Asil dosyaya hic dokunulmaz, var olan bir dosyanin ustune de
+    # yazilmaz (bkz. _yeni_dosya_adi).
+
+    def _pdf_hazir(self) -> bool:
         if not self.belge or not self.pdf_yolu:
-            return
+            return False
         if not self.belge.is_pdf:
-            self.bildir(self.m("yalniz_pdf"), "uyari")
+            self.bildir(self.m("pdf_gerek"), "uyari")
+            return False
+        return True
+
+    def _yeni_dosya_adi(self, ek: str) -> str:
+        """`<ad>-<ek>.pdf`, belgenin yaninda; varsa -2, -3 ..."""
+        kok, _ = os.path.splitext(self.pdf_yolu)
+        hedef, n = f"{kok}-{ek}.pdf", 2
+        while os.path.exists(hedef):
+            hedef, n = f"{kok}-{ek}-{n}.pdf", n + 1
+        return hedef
+
+    def _taze_kopya(self) -> pymupdf.Document:
+        """Belgenin diskteki hali. Bellekteki belgede vurgular highlight notu
+        olarak islenmis durur; ondan yazsak birlestirilen, karartilan ya da
+        temizlenen kopyaya vurgular da sessizce girerdi."""
+        return pymupdf.open(self.pdf_yolu)
+
+    def vurgulari_aktar(self) -> None:
+        """Vurgular highlight, kenar notlari yapiskan not (Text annotation)
+        olarak kopyaya gomulur: Acrobat'ta, tarayicida, telefonda gorunurler."""
+        if not self._pdf_hazir():
             return
-        if not self.vurgular:
+        if not self.vurgular and not self.notlar:
             self.bildir(self.m("aktarilacak_yok"), "uyari")
             return
-        kok, _ = os.path.splitext(self.pdf_yolu)
-        ek = self.m("vurgulu_ek")                 # <ad>-highlighted.pdf / -vurgulu / -markiert
-        hedef, n = f"{kok}-{ek}.pdf", 2
-        while os.path.exists(hedef):              # var olan bir dosyanin ustune yazma
-            hedef, n = f"{kok}-{ek}-{n}.pdf", n + 1
+        hedef = self._yeni_dosya_adi(self.m("vurgulu_ek"))   # <ad>-highlighted.pdf / -vurgulu / -markiert
         try:
-            self.belge.save(hedef, garbage=1, deflate=True)
+            with self._taze_kopya() as kopya:
+                for v in self.vurgular:
+                    self._not_yaz(kopya, v)
+                for n in self.notlar:
+                    self._kenar_notu_yaz(kopya, n)
+                kopya.save(hedef, garbage=1, deflate=True)
         except Exception as e:
             self.bildir(self.m("aktarilamadi", e=e), "hata")
             return
-        self.bildir(self.m("aktarildi", vurgular=self.m("vurgu_n", n=len(self.vurgular)),
+        ne = [self.m(anahtar, n=len(liste)) for anahtar, liste in
+              (("vurgu_n", self.vurgular), ("not_n", self.notlar)) if liste]
+        self.bildir(self.m("aktarildi", vurgular=", ".join(ne),
                            ad=os.path.basename(hedef)), "vurgu")
+
+    def _kenar_notu_yaz(self, belge: pymupdf.Document, n: dict):
+        """Kenar notunu `belge`ye yapiskan not olarak ekler. Nokta vurgularla
+        ayni uzayda (sayfanin kelime koordinatlari), donuk sayfada da yerinde."""
+        sayfa = belge[int(n["sayfa"])]
+        not_ = sayfa.add_text_annot(pymupdf.Point(n["x"], n["y"]), n["metin"], icon="Note")
+        not_.set_colors(stroke=rgb(self.ayar["vurgu-rengi"]))
+        not_.set_info(title="rubric", content=n["metin"])
+        not_.update()
+        return not_
+
+    # -- birlestir -----------------------------------------------------------
+
+    def birlestir(self) -> None:
+        """Secilen PDF'leri bakilan belgenin arkasina ekler, sonucu acar."""
+        if not self._pdf_hazir():
+            return
+        yollar = filedialog.askopenfilenames(
+            title=self.m("birlestir_baslik"),
+            filetypes=[("PDF", "*.pdf"), (self.m("ac_tumu"), "*.*")])
+        if yollar:
+            self.birlestir_yaz(list(yollar))
+
+    def birlestir_yaz(self, yollar: list[str]) -> str | None:
+        """Icindekilerde her dosya kendi adiyla ust baslik olur, kendi
+        basliklari onun altina kayar - Acrobat'in "dosyalari birlestir"i gibi.
+        PDF olmayan (epub, xps ...) once PDF'e cevrilir."""
+        hedef = self._yeni_dosya_adi(self.m("birlesik_ek"))
+        try:
+            with self._taze_kopya() as sonuc:
+                icindekiler = [[1, os.path.basename(self.pdf_yolu), 1]]
+                icindekiler += [[d + 1, b, s] for d, b, s in sonuc.get_toc()]
+                for yol in yollar:
+                    with pymupdf.open(yol) as ek:
+                        kaynak = ek if ek.is_pdf else pymupdf.open("pdf", ek.convert_to_pdf())
+                        bas = sonuc.page_count
+                        sonuc.insert_pdf(kaynak)
+                        icindekiler.append([1, os.path.basename(yol), bas + 1])
+                        icindekiler += [[d + 1, b, s + bas if s > 0 else s]
+                                        for d, b, s in kaynak.get_toc()]
+                try:
+                    sonuc.set_toc(icindekiler)
+                except Exception:
+                    pass                # bozuk bir icindekiler birlestirmeyi durdurmasin
+                sayfalar = sonuc.page_count
+                sonuc.save(hedef, garbage=3, deflate=True)
+        except Exception as e:
+            self.bildir(self.m("yazilamadi", e=e), "hata")
+            return None
+        self.belgeyi_ac(hedef)
+        self.bildir(self.m("birlestirildi", n=len(yollar) + 1,
+                           sayfalar=self.m("sayfa_n", n=sayfalar),
+                           ad=os.path.basename(hedef)), "vurgu")
+        return hedef
+
+    # -- ustveri temizle -----------------------------------------------------
+
+    USTVERI_ALANLARI = ("title", "author", "subject", "keywords", "creator",
+                        "producer", "creationDate", "modDate", "trapped")
+
+    def ustveri_temizle(self) -> None:
+        """Belge bilgisi (yazar, program, tarihler), XMP ve yorumlarin yazar
+        adi silinir. garbage=4 sart: eski bilgi nesnesi dosyada sahipsiz
+        kalmasin, gercekten gitsin (testte ham baytlara bakiliyor)."""
+        if not self._pdf_hazir():
+            return
+        hedef = self._yeni_dosya_adi(self.m("temiz_ek"))
+        try:
+            with self._taze_kopya() as kopya:
+                bilgi = kopya.metadata or {}
+                bulunan = [a for a in self.USTVERI_ALANLARI if str(bilgi.get(a) or "").strip()]
+                xmp = bool((kopya.get_xml_metadata() or "").strip())
+                # Yorum yazari /T anahtarinda. set_info(title="") bos degeri
+                # yok sayiyor, anahtar nesneden silinir. Form alanlari (widget)
+                # atlanir: onlarda /T alanin adi, silinirse form bozulur.
+                yazarlar = 0
+                for sayfa in kopya:
+                    for xref, tur, _ in sayfa.annot_xrefs():
+                        if tur != pymupdf.PDF_ANNOT_WIDGET and \
+                                kopya.xref_get_key(xref, "T")[0] != "null":
+                            kopya.xref_set_key(xref, "T", "null")
+                            yazarlar += tur != pymupdf.PDF_ANNOT_POPUP
+                if not (bulunan or xmp or yazarlar):
+                    self.bildir(self.m("ustveri_yok"), "vurgu")
+                    return
+                kopya.set_metadata({})
+                if xmp:
+                    kopya.del_xml_metadata()
+                kopya.save(hedef, garbage=4, deflate=True)
+        except Exception as e:
+            self.bildir(self.m("yazilamadi", e=e), "hata")
+            return
+        alanlar = [self.m(f"alan_{a}") for a in bulunan]
+        if xmp:
+            alanlar.append(self.m("alan_xmp"))
+        if yazarlar:
+            alanlar.append(self.m("alan_yorum_yazari", n=yazarlar))
+        self.bildir(self.m("ustveri_silindi", alanlar=", ".join(alanlar),
+                           ad=os.path.basename(hedef)), "vurgu")
+
+    # -- karartma (X) --------------------------------------------------------
+    #
+    # Kalem acikken surukleme kutu, tik altindaki kelimeyi isaretler;
+    # `:karart <kelime>` belgedeki her gecisi. Isaretler yalnizca bellekte ve
+    # ekranda (siyah taramali kutu - altindakinin dogru sey oldugu gorulsun).
+    # Enter / karartmayi-uygula taze kopyada apply_redactions calistirir:
+    # metin, gorsel pikselleri ve cizgiler **gercekten silinir**, yerine siyah
+    # kutu kalir. Ustune siyah dikdortgen cizmek degil - alttaki metin
+    # kopyalanamaz. Yazdiktan sonra dosya diskten yeniden okunup her alanda
+    # metin kalmis mi bakilir. Ctrl-Z / U son isareti (ya da son aramanin
+    # butun isaretlerini) geri alir.
+
+    def karartma_kalemi_degistir(self) -> None:
+        if not self._pdf_hazir():
+            return
+        if self.karartma_acik:
+            self._karartma_kalemini_birak()
+            self.tuval.config(cursor="")
+            if self.karartmalar:
+                self.bildir(self.m("karartma_bekliyor", n=len(self.karartmalar)), "uyari")
+            else:
+                self.bildir(self.m("karartma_kapali"), "vurgu")
+            return
+        self._karartma_kalemini_al()
+        self.bildir(self.m("karartma_acik"), "uyari")
+
+    def _karartma_kalemini_al(self) -> None:
+        self.kalem = False                  # ayni anda tek kalem
+        self._silme_kipini_kapat()
+        self.karartma_acik = True
+        self.tuval.config(cursor="crosshair")
+
+    def _karartma_kalemini_birak(self) -> None:
+        """Kalemi indirir; isaretler durur (Enter / karartmayi-uygula yazar)."""
+        self.karartma_acik = False
+        self._karartma_cizimi = None
+        self.tuval.delete("karartma-surukle")
+
+    def _karartma_basla(self, x: float, y: float) -> None:
+        yer = self._noktadaki_sayfa(x, y)
+        if not yer:
+            self.bildir(self.m("not_sayfa_disi"), "uyari")
+            return
+        self._karartma_cizimi = {"yer": yer, "x0": x, "y0": y, "x1": x, "y1": y}
+
+    def _karartma_surukle(self, x: float, y: float) -> None:
+        c = self._karartma_cizimi
+        yer = c["yer"]                      # kutu tek sayfada kalir
+        c["x1"] = max(yer["x"], min(yer["x"] + yer["w"], x))
+        c["y1"] = max(yer["y"], min(yer["y"] + yer["h"], y))
+        self.tuval.delete("karartma-surukle")
+        self.tuval.create_rectangle(c["x0"], c["y0"], c["x1"], c["y1"], outline=self.ayar["hata"],
+                                    dash=(4, 2), tags=("karartma-surukle",))
+
+    def _karartma_bitir(self) -> None:
+        c, self._karartma_cizimi = self._karartma_cizimi, None
+        self.tuval.delete("karartma-surukle")
+        yer = c["yer"]
+        if abs(c["x1"] - c["x0"]) + abs(c["y1"] - c["y0"]) <= 4:     # tik: altindaki kelime
+            p = self._sayfa_noktasina(yer, c["x0"], c["y0"])
+            kelime = next((k for k in self._sayfa_kelimeleri(yer["no"])
+                           if pymupdf.Rect(k[:4]).contains(p)), None)
+            if kelime is None:
+                self.bildir(self.m("karartma_kelime_yok"), "uyari")
+                return
+            dik = pymupdf.Rect(kelime[:4])
+        else:
+            dik = pymupdf.Rect(self._sayfa_noktasina(yer, c["x0"], c["y0"]),
+                               self._sayfa_noktasina(yer, c["x1"], c["y1"]))
+            dik.normalize()
+        self._karartma_isaretle([{"sayfa": yer["no"], "dik": [round(v, 2) for v in dik]}])
+        self.bildir(self.m("karartma_eklendi", n=len(self.karartmalar)), "uyari")
+
+    def _karartma_isaretle(self, yeni: list[dict]) -> None:
+        self.karartmalar.extend(yeni)
+        self.geri_yigini.append(("karartma-ekle", yeni, None))   # U / Ctrl-Z topluca geri alir
+        self.karartmalari_ciz()
+
+    def karart_ara(self, desen: str) -> None:
+        """`:karart <kelime>`: her gecisi isaretler ve kalemi acar; Enter yazar.
+        Buyuk / kucuk harf ayrilmaz (MuPDF'in aramasi). Tarama `/` gibi
+        parca parca yurur: 1612 sayfalik kitapta tek seferde ~10 sn donuyordu."""
+        if not self._pdf_hazir():
+            return
+        desen = desen.strip()
+        if not desen:
+            self.bildir(self.m("karart_kullanim"), "uyari")
+            return
+        self._karart_isi = {"desen": desen, "belge": self.belge, "no": 0, "yeni": []}
+        self._karart_adimi(self._karart_isi)
+
+    def _karart_adimi(self, isi: dict) -> None:
+        # Belge degistiyse ya da yeni bir :karart basladiysa bu is biter.
+        if isi is not self._karart_isi or isi["belge"] is not self.belge:
+            return
+        toplam = self.belge.page_count
+        bitis = time.perf_counter() + 0.04
+        while isi["no"] < toplam and time.perf_counter() < bitis:
+            no = isi["no"]
+            isi["yeni"] += [{"sayfa": no, "dik": [round(v, 2) for v in d]}
+                            for d in self.belge[no].search_for(isi["desen"])]
+            isi["no"] += 1
+        if isi["no"] < toplam:
+            self.bildir(self.m("karart_araniyor", desen=isi["desen"], n=isi["no"],
+                               toplam=toplam), "uyari")
+            self.after(1, self._karart_adimi, isi)
+            return
+        self._karart_isi = None
+        if not isi["yeni"]:
+            self.bildir(self.m("eslesme_yok"), "uyari")
+            return
+        self._karartma_kalemini_al()
+        self._karartma_isaretle(isi["yeni"])
+        self.bildir(self.m("karart_bulundu", desen=isi["desen"], n=len(isi["yeni"])), "uyari")
+
+    def karartmalari_ciz(self, gorunur: set[int] | None = None) -> None:
+        self.tuval.delete("karartma")
+        if not self.karartmalar:
+            return
+        if gorunur is None:                 # ciz() disindan: yalnizca islenmis sayfalar
+            gorunur = set(self.tuval_ogeleri)
+        m = self.sayfa_matrisi()
+        for k in self.karartmalar:
+            no = int(k["sayfa"])
+            yer = self.sayfa_yeri(no) if no in gorunur else None
+            if not yer:
+                continue
+            x0, y0, x1, y1 = self.aygit_dikdortgeni(no, pymupdf.Rect(k["dik"]), yer, m)
+            self.tuval.create_rectangle(x0, y0, x1, y1, fill="#000000", stipple="gray75",
+                                        outline=self.ayar["hata"], tags=("karartma",))
+
+    def karartmayi_uygula(self) -> None:
+        if not self._pdf_hazir():
+            return
+        if not self.karartmalar:
+            self.bildir(self.m("karartma_yok"), "uyari")
+            return
+        isaretler = list(self.karartmalar)
+        hedef = self._yeni_dosya_adi(self.m("karartilmis_ek"))
+        try:
+            with self._taze_kopya() as kopya:
+                for k in isaretler:
+                    kopya[int(k["sayfa"])].add_redact_annot(pymupdf.Rect(k["dik"]), fill=(0, 0, 0))
+                for no in sorted({int(k["sayfa"]) for k in isaretler}):
+                    kopya[no].apply_redactions()
+                kopya.save(hedef, garbage=4, deflate=True, clean=True)
+            sizan = self._karartma_sizan(hedef, isaretler)
+        except Exception as e:
+            self.bildir(self.m("yazilamadi", e=e), "hata")
+            return
+        self.karartmalar = []
+        self._karartma_kalemini_birak()
+        self.tuval.config(cursor="")
+        ad = os.path.basename(hedef)
+        self.belgeyi_ac(hedef)              # sonucu hemen gor
+        if sizan:
+            self.bildir(self.m("karartma_sizdi", n=sizan, ad=ad), "hata")
+        else:
+            self.bildir(self.m("karartildi", n=len(isaretler), ad=ad), "vurgu")
+
+    @staticmethod
+    def _karartma_sizan(yol: str, isaretler: list[dict]) -> int:
+        """Yazilan dosyada icinde hala metin okunan isaretli alan sayisi. Alan
+        1 pt iceriden okunur: kenara degen komsu harf sizinti sayilmasin."""
+        sizan = 0
+        with pymupdf.open(yol) as belge:
+            for k in isaretler:
+                d = pymupdf.Rect(k["dik"])
+                if d.width > 2 and d.height > 2:
+                    d = d + (1, 1, -1, -1)
+                if belge[int(k["sayfa"])].get_text("text", clip=d).strip():
+                    sizan += 1
+        return sizan
+
+    # -- sayfa duzeni (S) ----------------------------------------------------
+    #
+    # Belgenin ustune binen kucuk resim izgarasi. hjkl gezer, HJKL imlecteki
+    # sayfayi (ya da v ile secilen araligi) tasir, x siler, r / R saga / sola
+    # dondurur, u geri alir, e secileni ayri bir PDF'e yazar, w butun duzeni
+    # yeni dosyaya yazip onu acar, q / Esc kapatir - kaydedilmemis degisiklik
+    # varsa ikinci q ister. Fare: tik secer, Shift+tik araligi secer.
+    #
+    # Duzen yalnizca bir liste: [kaynak sayfa, ek donme]. Yazana kadar belgeye
+    # dokunulmaz; yazarken taze kopyada select() + set_rotation. Kucuk resimler
+    # notsuz (annots=False) islenir: ciktida vurgu olmayacak, burada da yok.
+    #
+    # Izgara tam sayi pikselde (bkz. CLAUDE.md "piksel izgarasi"): hucre ve
+    # bosluk sabit, kaydirma kendi ofsetiyle; tuvalin scrollregion'i yok.
+
+    DUZEN_KUTU = (132, 172)             # kucuk resmin sigdigi kutu (px)
+    DUZEN_ARA = 18                      # hucreler arasi bosluk (px)
+    DUZEN_ETIKET = 20                   # resmin altindaki numara satiri (px)
+    DUZEN_UST = 30                      # ustteki baslik satiri (px)
+    DUZEN_ONBELLEK = 400                # en cok bu kadar kucuk resim tutulur
+
+    def sayfa_duzeni(self) -> None:
+        if not self._pdf_hazir():
+            return
+        if self.mod in ("icindekiler", "vurgular", "belgeler", "yer-imleri"):
+            self.paneli_kapat()
+        if not hasattr(self, "duzen_tuvali"):
+            self.duzen_tuvali = tk.Canvas(self, bd=0, highlightthickness=0, takefocus=1)
+            self.duzen_tuvali.bind("<Configure>", self._duzen_olcu_degisti)
+            self.duzen_tuvali.bind("<ButtonPress-1>", self._duzen_tik)
+            self.duzen_tuvali.bind("<MouseWheel>", self._duzen_tekerlek)
+        n = self.belge.page_count
+        self._duzen = {"belge": self.belge, "yol": self.pdf_yolu,
+                       "sira": [[no, 0] for no in range(n)],
+                       "imlec": max(0, min(self.aktif_sayfa, n - 1)), "capa": None,
+                       "gecmis": [], "resimler": {}, "ust": 0, "q_bekliyor": False}
+        self.mod = "sayfa-duzeni"
+        self.duzen_tuvali.config(bg=self.ayar["zemin"])
+        self.duzen_tuvali.place(in_=self.tuval_alani, x=0, y=0, relwidth=1, relheight=1)
+        tk.Misc.lift(self.duzen_tuvali)     # Canvas.lift tag_raise'dir, pencereyi degil
+        self.duzen_tuvali.focus_set()
+        self.update_idletasks()
+        self._duzen_imleci_goster()
+        self._duzeni_ciz()
+        self.gecici_ileti = ""              # onceki isin iletisi yerine tus ipucu
+        self._duzen_ipucu()
+
+    def _duzen_ipucu(self) -> None:
+        """Tus ipucu durum cubugunda durur (baslik satirina 1100 px'te bile
+        sigmiyordu); bir islemin iletisi varsa bir sonraki tusa kadar o."""
+        if not self.gecici_ileti:
+            self.bildir(self.m("duzen_ipucu"), "sonuk")
+
+    def _duzeni_kapat(self) -> None:
+        self.duzen_tuvali.place_forget()
+        self.duzen_tuvali.delete("all")
+        self._duzen = None                  # kucuk resimler de gider
+        self.mod = "normal"
+        self.gecici_ileti = ""              # tus ipucu belgenin ustunde kalmasin
+        self.tuval.focus_set()
+        self.durumu_tazele()
+
+    def _duzen_olcusu(self) -> tuple[int, int, int, int]:
+        """(sutun sayisi, sol pay, hucre eni, hucre boyu) - hepsi tam sayi."""
+        kw, kh = self.DUZEN_KUTU
+        hw, hh = kw + self.DUZEN_ARA, kh + self.DUZEN_ETIKET + self.DUZEN_ARA
+        en = max(1, self.duzen_tuvali.winfo_width())
+        sutun = max(1, (en - self.DUZEN_ARA) // hw)
+        return sutun, (en - sutun * hw + self.DUZEN_ARA) // 2, hw, hh
+
+    def _duzen_hucresi(self, i: int) -> tuple[int, int]:
+        """i. hucrenin resim kutusunun sol ustu, tuvalde (kaydirma uygulanmis)."""
+        sutun, sol, hw, hh = self._duzen_olcusu()
+        return (sol + (i % sutun) * hw,
+                self.DUZEN_UST + self.DUZEN_ARA + (i // sutun) * hh - self._duzen["ust"])
+
+    def _duzen_ofsetini_sinirla(self) -> None:
+        d = self._duzen
+        sutun, _, _, hh = self._duzen_olcusu()
+        boy = self.duzen_tuvali.winfo_height() - self.DUZEN_UST
+        toplam = self.DUZEN_ARA + -(-len(d["sira"]) // sutun) * hh
+        d["ust"] = max(0, min(d["ust"], toplam - boy))
+
+    def _duzen_imleci_goster(self) -> None:
+        d = self._duzen
+        sutun, _, _, hh = self._duzen_olcusu()
+        boy = self.duzen_tuvali.winfo_height() - self.DUZEN_UST
+        ust = (d["imlec"] // sutun) * hh            # imlec satiri, izgara uzayinda
+        if ust < d["ust"]:
+            d["ust"] = ust
+        elif ust + hh + self.DUZEN_ARA > d["ust"] + boy:
+            d["ust"] = ust + hh + self.DUZEN_ARA - boy
+        self._duzen_ofsetini_sinirla()
+
+    def _duzen_secili(self) -> range:
+        d = self._duzen
+        if d["capa"] is None:
+            return range(d["imlec"], d["imlec"] + 1)
+        a, b = sorted((d["capa"], d["imlec"]))
+        return range(a, b + 1)
+
+    def _duzen_degisti(self) -> bool:
+        d = self._duzen
+        return d["sira"] != [[no, 0] for no in range(d["belge"].page_count)]
+
+    def _duzen_resmi(self, kaynak: int, donme: int) -> tk.PhotoImage | None:
+        resimler = self._duzen["resimler"]
+        anahtar = (kaynak, donme)
+        resim = resimler.pop(anahtar, None)
+        if resim is None:
+            try:
+                sayfa = self._duzen["belge"][kaynak]
+                r = sayfa.rect
+                w, h = (r.height, r.width) if donme % 180 else (r.width, r.height)
+                kw, kh = self.DUZEN_KUTU
+                k = min(kw / max(w, 1), kh / max(h, 1))
+                m = pymupdf.Matrix(k, k)
+                m.prerotate(donme)
+                pix = sayfa.get_pixmap(matrix=m, alpha=False, annots=False)
+                resim = tk.PhotoImage(master=self, data=pix.tobytes("ppm"))
+            except Exception:
+                return None
+        resimler[anahtar] = resim           # en sona: en son kullanilan
+        while len(resimler) > self.DUZEN_ONBELLEK:
+            del resimler[next(iter(resimler))]
+        return resim
+
+    def _duzeni_ciz(self) -> None:
+        d, t = self._duzen, self.duzen_tuvali
+        t.delete("all")
+        sutun, _, _, hh = self._duzen_olcusu()
+        kw, kh = self.DUZEN_KUTU
+        en, boy = t.winfo_width(), t.winfo_height()
+        yazi = (self.ayar["yazitipi"], max(8, int(self.ayar["yazitipi-boy"])))
+        secim = self._duzen_secili() if d["capa"] is not None else range(0)
+        alt = kh + self.DUZEN_ETIKET                # hucre cercevesinin alt payi
+        for i in range(max(0, d["ust"] // hh * sutun), len(d["sira"])):
+            x, y = self._duzen_hucresi(i)
+            if y > boy:
+                break
+            kaynak, donme = d["sira"][i]
+            if i in secim:
+                t.create_rectangle(x - 6, y - 6, x + kw + 5, y + alt + 1,
+                                   fill=self.ayar["panel-secili"], outline="")
+            resim = self._duzen_resmi(kaynak, donme)
+            if resim is not None:
+                rw, rh = resim.width(), resim.height()
+                ix, iy = x + (kw - rw) // 2, y + (kh - rh) // 2
+                t.create_image(ix, iy, image=resim, anchor="nw")
+                t.create_rectangle(ix - 1, iy - 1, ix + rw, iy + rh,
+                                   outline=self.ayar["sayfa-cerceve"])
+            imlecte = i == d["imlec"]
+            t.create_text(x + kw // 2, y + kh + 4, anchor="n", font=yazi,
+                          text=f"{kaynak + 1}" + (f" r{donme}" if donme else ""),
+                          fill=self.ayar["vurgu"] if imlecte else self.ayar["sonuk"])
+            if imlecte:
+                t.create_rectangle(x - 6, y - 6, x + kw + 5, y + alt + 1,
+                                   outline=self.ayar["vurgu"], width=2)
+        # baslik satiri: izgaranin ustune, kaydirilan hucreleri ortsun
+        t.create_rectangle(0, 0, en, self.DUZEN_UST - 1, fill=self.ayar["cubuk-zemin"], outline="")
+        t.create_line(0, self.DUZEN_UST - 1, en, self.DUZEN_UST - 1,
+                      fill=self.ayar["palet-cerceve"])
+        baslik = self.m("duzen_baslik", ad=os.path.basename(d["yol"]),
+                        n=self.m("sayfa_n", n=len(d["sira"])))
+        if self._duzen_degisti():
+            baslik += "  " + self.m("duzen_degisti")
+        t.create_text(10, self.DUZEN_UST // 2, anchor="w", font=yazi, text=baslik,
+                      fill=self.ayar["cubuk-on"])
+
+    def duzen_tus(self, ad: str) -> None:
+        d = self._duzen
+        sutun, _, _, hh = self._duzen_olcusu()
+        n = len(d["sira"])
+        q_bekliyor, d["q_bekliyor"] = d["q_bekliyor"], False
+        ekran = max(1, (self.duzen_tuvali.winfo_height() - self.DUZEN_UST) // hh) * sutun
+        adim = {"h": -1, "<Left>": -1, "l": 1, "<Right>": 1, "k": -sutun, "<Up>": -sutun,
+                "j": sutun, "<Down>": sutun, "<Prior>": -ekran, "<Next>": ekran}.get(ad)
+        tasima = {"H": -1, "L": 1, "K": -sutun, "J": sutun}.get(ad)
+        if adim is not None:
+            d["imlec"] = max(0, min(n - 1, d["imlec"] + adim))
+        elif ad in ("g", "<Home>"):
+            d["imlec"] = 0
+        elif ad in ("G", "<End>"):
+            d["imlec"] = n - 1
+        elif tasima is not None:
+            self._duzen_tasi(tasima)
+        elif ad in ("x", "d", "<Delete>"):
+            self._duzen_sil()
+        elif ad in ("r", "R"):
+            self._duzen_dondur(90 if ad == "r" else 270)
+        elif ad == "v":
+            d["capa"] = d["imlec"] if d["capa"] is None else None
+        elif ad in ("u", "U", "<C-z>"):
+            self._duzen_geri_al()
+        elif ad == "e":
+            self._duzen_yaz(ayir=True)
+        elif ad in ("w", "<C-s>"):
+            if self._duzen_yaz():
+                return                              # yazildi, duzen kapandi
+        elif ad == "<Esc>" and d["capa"] is not None:
+            d["capa"] = None
+        elif ad in ("q", "<Esc>", "S"):
+            if self._duzen_degisti() and not q_bekliyor:
+                d["q_bekliyor"] = True
+                self.bildir(self.m("duzen_kaydedilmedi"), "uyari")
+            else:
+                self._duzeni_kapat()
+            return
+        else:
+            self._duzen_ipucu()
+            return
+        self._duzen_imleci_goster()
+        self._duzeni_ciz()
+        self._duzen_ipucu()
+
+    def _duzen_gecmise(self) -> None:
+        d = self._duzen
+        d["gecmis"].append(([s[:] for s in d["sira"]], d["imlec"], d["capa"]))
+
+    def _duzen_tasi(self, adim: int) -> None:
+        d = self._duzen
+        blok = self._duzen_secili()
+        a = blok.start
+        yeni = max(0, min(len(d["sira"]) - len(blok), a + adim))
+        if yeni == a:
+            return
+        self._duzen_gecmise()
+        parca = d["sira"][blok.start:blok.stop]
+        del d["sira"][blok.start:blok.stop]
+        d["sira"][yeni:yeni] = parca
+        d["imlec"] += yeni - a
+        if d["capa"] is not None:
+            d["capa"] += yeni - a
+
+    def _duzen_sil(self) -> None:
+        d = self._duzen
+        blok = self._duzen_secili()
+        if len(blok) >= len(d["sira"]):
+            self.bildir(self.m("duzen_hepsi"), "uyari")
+            return
+        self._duzen_gecmise()
+        del d["sira"][blok.start:blok.stop]
+        d["imlec"] = min(blok.start, len(d["sira"]) - 1)
+        d["capa"] = None
+        self.bildir(self.m("duzen_silindi", sayfalar=self.m("sayfa_n", n=len(blok))), "vurgu")
+
+    def _duzen_dondur(self, derece: int) -> None:
+        self._duzen_gecmise()
+        for i in self._duzen_secili():
+            s = self._duzen["sira"][i]
+            s[1] = (s[1] + derece) % 360
+
+    def _duzen_geri_al(self) -> None:
+        d = self._duzen
+        if not d["gecmis"]:
+            self.bildir(self.m("duzen_geri_yok"), "uyari")
+            return
+        d["sira"], d["imlec"], d["capa"] = d["gecmis"].pop()
+
+    def _duzen_yaz(self, ayir: bool = False) -> bool:
+        """w: butun duzeni yazar ve yeni dosyayi acar (duzen kapanir, True).
+        e: yalnizca secili sayfalari yazar, duzende kalinir."""
+        d = self._duzen
+        if ayir:
+            sira, ek = [d["sira"][i] for i in self._duzen_secili()], self.m("ayri_ek")
+        elif not self._duzen_degisti():
+            self.bildir(self.m("duzen_degismedi"), "uyari")
+            return False
+        else:
+            sira, ek = d["sira"], self.m("duzen_ek")
+        hedef = self._yeni_dosya_adi(ek)
+        try:
+            with pymupdf.open(d["yol"]) as kopya:
+                kopya.select([k for k, _ in sira])
+                for i, (_, donme) in enumerate(sira):
+                    if donme:
+                        kopya[i].set_rotation((kopya[i].rotation + donme) % 360)
+                kopya.save(hedef, garbage=3, deflate=True)
+        except Exception as e:
+            self.bildir(self.m("yazilamadi", e=e), "hata")
+            return False
+        ileti = self.m("duzen_yazildi", sayfalar=self.m("sayfa_n", n=len(sira)),
+                       ad=os.path.basename(hedef))
+        if ayir:
+            self.bildir(ileti, "vurgu")
+            return False
+        self._duzeni_kapat()
+        self.belgeyi_ac(hedef)
+        self.bildir(ileti, "vurgu")
+        return True
+
+    def _duzen_olcu_degisti(self, _olay=None) -> None:
+        if self.mod == "sayfa-duzeni":
+            self._duzen_imleci_goster()
+            self._duzeni_ciz()
+
+    def _duzen_tik(self, olay) -> None:
+        d = self._duzen
+        if d is None:
+            return
+        self.duzen_tuvali.focus_set()
+        sutun, sol, hw, hh = self._duzen_olcusu()
+        gy = olay.y - self.DUZEN_UST - self.DUZEN_ARA // 2 + d["ust"]
+        sutun_no = (olay.x - sol + self.DUZEN_ARA // 2) // hw
+        if olay.y < self.DUZEN_UST or gy < 0 or not 0 <= sutun_no < sutun:
+            return
+        i = gy // hh * sutun + sutun_no
+        if i >= len(d["sira"]):
+            return
+        if olay.state & 0x1:                        # Shift+tik: araligi sec
+            if d["capa"] is None:
+                d["capa"] = d["imlec"]
+        else:
+            d["capa"] = None
+        d["imlec"] = i
+        d["q_bekliyor"] = False
+        self._duzeni_ciz()
+
+    def _duzen_tekerlek(self, olay) -> None:
+        if self._duzen is None:
+            return
+        self._duzen["ust"] -= int(olay.delta / 120 * self._duzen_olcusu()[3] / 2)
+        self._duzen_ofsetini_sinirla()
+        self._duzeni_ciz()
 
     # -- icindekiler -------------------------------------------------------
 
@@ -5644,6 +6476,8 @@ class Rubric(tk.Tk):
                     self.yer_imi_sil(im)
         elif ad == "export":
             self.disa_aktar(arg)
+        elif katla(ad) in ("redact", "karart", "schwarzen", "schwaerzen"):
+            self.karart_ara(arg)
         elif ad == "info":
             self.bilgi()
         elif ad == "toc":
@@ -5700,6 +6534,11 @@ class Rubric(tk.Tk):
             "geri-getir": self.geri_getir,
             "silme-kipi": self.silme_kipi_degistir,
             "vurgulari-aktar": self.vurgulari_aktar,
+            "sayfa-duzeni": self.sayfa_duzeni,
+            "birlestir":    self.birlestir,
+            "karartma-kalemi": self.karartma_kalemi_degistir,
+            "karartmayi-uygula": self.karartmayi_uygula,
+            "ustveri-temizle": self.ustveri_temizle,
             "ara-ileri":    lambda: self.komut_modu("/"),
             "ara-geri":     lambda: self.komut_modu("?"),
             "sonraki-bulgu": lambda: self.bulguya_git(self.arama_yonu),
@@ -6349,6 +7188,11 @@ class Rubric(tk.Tk):
             return None
         self.gecici_ileti = ""
 
+        # sayfa duzeni butun tuslari kendisi alir: altta kalan belgeye gitmesin
+        if self.mod == "sayfa-duzeni":
+            self.duzen_tus(ad)
+            return "break"
+
         # renk bekleyen secim: Enter varsayilan renk, renk tusu o renk, Esc birakir.
         # Renk tuslari yalnizca burada gecerli; baska tuslar (j, k...) her zamanki isi yapar.
         if self._bekleyen_vurgu is not None and self.bekleyen is None and not self.sayac:
@@ -6393,6 +7237,11 @@ class Rubric(tk.Tk):
         if ad.isdigit() and not (ad == "0" and not self.sayac):
             self.sayac += ad
             self.durumu_tazele()
+            return "break"
+
+        # karartma kalemi acikken Enter karartilmis kopyayi yazar
+        if ad == "<Return>" and self.karartma_acik and not self.sayac:
+            self.karartmayi_uygula()
             return "break"
 
         # sayi + Enter -> o sayfaya git (42<Return>, 42G ile ayni is)
@@ -6518,9 +7367,11 @@ class Rubric(tk.Tk):
                "icindekiler": self.m("mod_icindekiler"),
                "vurgular": self.m("mod_vurgular"),
                "belgeler": self.m("mod_belgeler"),
-               "yer-imleri": self.m("mod_yer_imleri")}.get(self.mod, "")
+               "yer-imleri": self.m("mod_yer_imleri"),
+               "sayfa-duzeni": self.m("mod_sayfa_duzeni")}.get(self.mod, "")
         if self.mod == "normal":
             mod = " ".join(self.m(a) for a, acik in (("mod_kalem", self.kalem),
+                                                     ("mod_karartma", self.karartma_acik),
                                                      ("mod_baglantilar", self.baglantilar_acik))
                            if acik)
         if self.bekleyen:

@@ -151,6 +151,7 @@ set baslik-bicimi  {ad} [{sayfa}/{toplam}] - rubric
 #   dondur ters-renk cift-sayfa icindekiler eylemler tam-ekran sunum durum-cubugu
 #   baslik-cubugu dil
 #   vurgu-kalemi vurgular vurgu-geri-al vurgulari-aktar
+#   sayfa-duzeni birlestir karartma-kalemi karartmayi-uygula ustveri-temizle
 #   ara-ileri ara-geri sonraki-bulgu onceki-bulgu vurguyu-kapat
 #   komut-modu cik geri-zipla ileri-zipla yeniden-yukle ac
 #   sonraki-belge onceki-belge belgeyi-kapat kapanani-ac belgeler
