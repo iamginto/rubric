@@ -448,7 +448,7 @@ VARSAYILAN_AYAR = {
 KAPANAN_EN_COK = 10
 
 # Palette secim listesi acan komutlarin alt menu kipleri ("renk": vurgu renkleri)
-SECIM_KIPLERI = ("dil", "tema", "sinir", "renk", "yazici", "tex")
+SECIM_KIPLERI = ("dil", "tema", "sinir", "renk", "yazici")
 
 # Vurgu kalemi renkleri. "sari" temanin `vurgu-rengi`ni kullanir (tema
 # degisince doner), otekiler sabit: beyaz sayfada carpma karisimiyla okunur
@@ -966,10 +966,12 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "nothing to copy - shift+drag over the text first",
         "gece_modu_durum":  "night mode: {durum}",
         "tex_sec":          "open a .tex file",
-        "tex_menu_baslik":  "tex",
         "tex_yeni":         "new file",
         "tex_dosya_ac":     "open a file",
         "tex_yeni_baslik":  "new .tex file",
+        "tex_yeni_aciklama": "start a fresh .tex, pick where it lives",
+        "tex_ac_aciklama":  "edit an existing .tex",
+        "tex_karti_ipucu":  "j/k move   enter pick   n / o   esc cancel",
         "tex_acildi":       "tex: {ad} - ctrl-s compiles, esc goes to the pdf, T comes back",
         "tex_kapandi":      "tex mode closed, {ad} saved",
         "tex_kapali":       "tex mode is off (T opens it)",
@@ -1209,10 +1211,12 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "kopyalanacak bir şey yok - önce shift+sürükle ile seç",
         "gece_modu_durum":  "gece modu: {durum}",
         "tex_sec":          ".tex dosyası aç",
-        "tex_menu_baslik":  "tex",
         "tex_yeni":         "yeni dosya",
         "tex_dosya_ac":     "dosya aç",
         "tex_yeni_baslik":  "yeni .tex dosyası",
+        "tex_yeni_aciklama": "sıfırdan bir .tex başlat, yerini seç",
+        "tex_ac_aciklama":  "var olan bir .tex'i düzenle",
+        "tex_karti_ipucu":  "j/k gez   enter seç   n / o   esc vazgeç",
         "tex_acildi":       "tex: {ad} - ctrl-s derler, esc pdf'e geçer, T geri getirir",
         "tex_kapandi":      "tex modu kapandı, {ad} kaydedildi",
         "tex_kapali":       "tex modu kapalı (T açar)",
@@ -1453,10 +1457,12 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kopyalanacak_yok": "nichts zu kopieren - erst mit Shift+Ziehen auswählen",
         "gece_modu_durum":  "Nachtmodus: {durum}",
         "tex_sec":          ".tex-Datei öffnen",
-        "tex_menu_baslik":  "TeX",
         "tex_yeni":         "neue Datei",
         "tex_dosya_ac":     "Datei öffnen",
         "tex_yeni_baslik":  "neue .tex-Datei",
+        "tex_yeni_aciklama": "neue .tex beginnen, Speicherort wählen",
+        "tex_ac_aciklama":  "vorhandene .tex bearbeiten",
+        "tex_karti_ipucu":  "j/k bewegen   Enter wählen   n / o   Esc abbrechen",
         "tex_acildi":       "tex: {ad} - Strg-S kompiliert, Esc geht zum PDF, T zurück",
         "tex_kapandi":      "TeX-Modus geschlossen, {ad} gespeichert",
         "tex_kapali":       "TeX-Modus ist aus (T öffnet ihn)",
@@ -2249,6 +2255,8 @@ class Rubric(tk.Tk):
         # acilista kurulur (bkz. _tex_arayuzu_kur)
         self.tex: dict | None = None
         self.tex_metin: tk.Text | None = None
+        self.tex_karti: tk.Frame | None = None     # T'nin "yeni / ac" karti
+        self._tex_karti_secili = 0
         self._boyut_isi = None             # pencere boyu durulunca yenile
         self._ipc_isi = None               # tek-pencere kuyruk yoklamasi
         # --- tepsi modu (bkz. _tepsi_kur) ---
@@ -6242,7 +6250,7 @@ class Rubric(tk.Tk):
             self.alt_menuyu_kapat()
             {"dil": self.dili_ayarla, "tema": self.tema_uygula,
              "sinir": self.kapanan_siniri_ayarla, "renk": self.renk_tusu_sor,
-             "yazici": self.yaziciyi_ayarla, "tex": self._tex_sec}[kip](secim)
+             "yazici": self.yaziciyi_ayarla}[kip](secim)
         else:
             {"calistir": self.palet_calistir, "tus-ata": self.tus_ata,
              "tus-kaldir": self.tusu_kaldir, "varsayilan": self.varsayilana_don}[secim]()
@@ -7067,25 +7075,112 @@ class Rubric(tk.Tk):
     # tusu almaz. Esc PDF'e gecer, T geri getirir, Ctrl-W modu kapatir.
 
     def tex_modu(self) -> None:
-        """T: kapaliysa "yeni dosya / dosya ac" secimini sorar (kullanici
-        istegi, 2026-09-23: PDF'in yanindaki .tex'i kendiliginden aramasin),
-        aciksa editore gecer."""
+        """T: kapaliysa ortada "yeni dosya / dosya ac" kartini acar (kullanici
+        istegi, 2026-09-23: buyuk, ortada, Ctrl-K paleti olmadan; PDF'in
+        yanindaki .tex'i kendiliginden aramasin), aciksa editore gecer."""
         if self.tex:
             self.tex_metin.focus_set()
             return
-        if self.mod != "palet":
-            self.eylemler()
-        self._palet_komuta_git("tex-modu")
-        self.palet_kip = "tex"
-        self.alt_menu_ac(self.m("tex_menu_baslik"),
-                         [(f"> {self.m('tex_yeni')}", ""), (f"> {self.m('tex_dosya_ac')}", "")],
-                         ["yeni", "ac"])
+        if self.mod == "palet":
+            self.paleti_kapat()
+        if self.tex_karti is None:
+            self._tex_kartini_kur()
+        self._tex_karti_renkleri()
+        self._tex_karti_secili = 0
+        self._tex_kartini_ciz()
+        self.tex_karti.place(relx=0.5, rely=0.45, anchor="center")
+        self.tex_karti.lift()
+        self.tex_karti.focus_set()
+
+    # (tus, metin anahtari, aciklama anahtari, secim)
+    _TEX_KARTI_SATIRLARI = (("n", "tex_yeni", "tex_yeni_aciklama", "yeni"),
+                            ("o", "tex_dosya_ac", "tex_ac_aciklama", "ac"))
+
+    def _tex_kartini_kur(self) -> None:
+        """T'nin secim karti: paletten bagimsiz, ortada, iki buyuk satir."""
+        k = self.tex_karti = tk.Frame(self, bd=0, highlightthickness=1, takefocus=True)
+        self.tex_karti_baslik = tk.Label(k, anchor="w", bd=0, padx=22, pady=12)
+        self.tex_karti_baslik.pack(side="top", fill="x")
+        self.tex_karti_cizgi = tk.Frame(k, height=1, bd=0)
+        self.tex_karti_cizgi.pack(side="top", fill="x")
+        self.tex_karti_satirlar = []
+        for i in range(len(self._TEX_KARTI_SATIRLARI)):
+            e = tk.Label(k, anchor="w", bd=0, padx=22, pady=14, cursor="hand2")
+            e.pack(side="top", fill="x")
+            e.bind("<Enter>", lambda _e, i=i: self._tex_karti_git(i))
+            e.bind("<Button-1>", lambda _e, i=i: self._tex_karti_sec(i))
+            self.tex_karti_satirlar.append(e)
+        self.tex_karti_alt_cizgi = tk.Frame(k, height=1, bd=0)
+        self.tex_karti_alt_cizgi.pack(side="top", fill="x")
+        self.tex_karti_ipucu = tk.Label(k, anchor="w", bd=0, padx=22, pady=6)
+        self.tex_karti_ipucu.pack(side="top", fill="x")
+        k.bind("<Key>", self._tex_karti_tus)
+        # Baska yere tiklayinca kart kapanir. Satira tiklamak odagi almaz
+        # (Label), yani o tik once kapatip sonra secmeyi bozmaz.
+        k.bind("<FocusOut>", lambda _e: self._tex_kartini_kapat())
+
+    def _tex_karti_renkleri(self) -> None:
+        a = self.ayar
+        buyuk = (a["yazitipi"], a["yazitipi-boy"] + 4)
+        orta = (a["yazitipi"], a["yazitipi-boy"] + 2)
+        yt = (a["yazitipi"], a["yazitipi-boy"])
+        z = a["palet-zemin"]
+        self.tex_karti.config(bg=z, highlightbackground=a["vurgu"], highlightcolor=a["vurgu"])
+        self.tex_karti_baslik.config(bg=z, fg=a["vurgu"], font=buyuk, text="$ tex")
+        for c in (self.tex_karti_cizgi, self.tex_karti_alt_cizgi):
+            c.config(bg=a["palet-cerceve"])
+        for e in self.tex_karti_satirlar:
+            e.config(font=orta)
+        self.tex_karti_ipucu.config(bg=a["cubuk-zemin"], fg=a["sonuk"], font=yt,
+                                    text=self.m("tex_karti_ipucu"))
+
+    def _tex_kartini_ciz(self) -> None:
+        a = self.ayar
+        adlar = [self.m(ad) for _, ad, _, _ in self._TEX_KARTI_SATIRLARI]
+        en = max(len(ad) for ad in adlar) + 4
+        for i, (e, (tus, _, aciklama, _)) in enumerate(zip(self.tex_karti_satirlar,
+                                                          self._TEX_KARTI_SATIRLARI)):
+            secili = i == self._tex_karti_secili
+            e.config(text=f"{'>' if secili else ' '} [{tus}] {adlar[i].ljust(en)}"
+                          f"{self.m(aciklama)}",
+                     bg=a["panel-secili"] if secili else a["palet-zemin"],
+                     fg=a["vurgu"] if secili else a["cubuk-on"])
+
+    def _tex_karti_git(self, i: int) -> None:
+        self._tex_karti_secili = i % len(self._TEX_KARTI_SATIRLARI)
+        self._tex_kartini_ciz()
+
+    def _tex_karti_tus(self, olay) -> str:
+        ad = olay.keysym
+        if ad in ("j", "Down", "Tab"):
+            self._tex_karti_git(self._tex_karti_secili + 1)
+        elif ad in ("k", "Up", "ISO_Left_Tab"):
+            self._tex_karti_git(self._tex_karti_secili - 1)
+        elif ad in ("Return", "KP_Enter", "space"):
+            self._tex_karti_sec(self._tex_karti_secili)
+        elif ad in ("Escape", "q"):
+            self._tex_kartini_kapat()
+        else:
+            for i, (tus, _, _, _) in enumerate(self._TEX_KARTI_SATIRLARI):
+                if ad == tus:
+                    self._tex_karti_sec(i)
+                    break
+        return "break"
+
+    def _tex_kartini_kapat(self) -> None:
+        if self.tex_karti is not None and self.tex_karti.winfo_ismapped():
+            self.tex_karti.place_forget()
+            if self.focus_get() in (self.tex_karti, None):
+                self.tuval.focus_set()
+
+    def _tex_karti_sec(self, i: int) -> None:
+        self._tex_kartini_kapat()
+        self._tex_sec(self._TEX_KARTI_SATIRLARI[i][3])
 
     def _tex_sec(self, secim: str) -> None:
         """Secim menusunden: yeni dosya (nereye kaydedilecegi sorulur, sablonla
         yaratilir) ya da var olan bir .tex. Ikisinde de dosyanin yeri bastan
         belli: canli derleme hem .tex'i hem PDF'i hep diske yazar."""
-        self.paleti_kapat()
         dizin = os.path.dirname(self.pdf_yolu) if self.pdf_yolu else os.path.expanduser("~")
         if secim == "yeni":
             yol = filedialog.asksaveasfilename(
@@ -7801,8 +7896,8 @@ class Rubric(tk.Tk):
     def tus_geldi(self, olay) -> str | None:
         if self.focus_get() in (self.komut_girdi, self.liste, self.palet_girdi):
             return None
-        if self.tex_metin is not None and self.focus_get() is self.tex_metin:
-            return None                           # tex editoru: yazilan yazi olur
+        if self.tex_metin is not None and self.focus_get() in (self.tex_metin, self.tex_karti):
+            return None                           # tex editoru / karti kendi tuslarini alir
         ad = self.tus_adini_coz(olay)
         if not ad:
             return None
