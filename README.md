@@ -51,7 +51,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `S` | page organizer: move, delete, rotate, extract pages |
 | `X` | redact pen: drag a box or click a word, `Enter` writes the copy |
 | `<C-c>` | copy the shift+dragged text |
-| `T` | tex mode: new or open a `.tex`, live PDF beside it (`<C-s>` compile, `<Esc>` to the PDF, `<C-w>` close) |
+| `T` | tex mode: new or open a `.tex`, live PDF beside it (`<C-s>` compile, `<C-j>` / ctrl+click SyncTeX jump, `<Esc>` to the PDF, `<C-w>` close) |
 | `C` | convert: PDF, plain text or PNG pages (EPUB, MOBI, Word...) |
 | `U` `<C-z>` | bring back the last deleted thing |
 | `m<x>` `'<x>` | set / jump to mark |
@@ -62,7 +62,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `<A-w>` `<A-o>` | switch pane, back to one pane |
 | `<C-o>` `<C-i>` | jump history |
 | `<C-Left>` `<C-Right>` `B` | switch documents, document list |
-| `o` | open a file (Word `.docx` too, rendered through Word if installed) |
+| `o` | fuzzy file finder, recent files first (`<C-o>` Windows dialog; Word `.docx` too, rendered through Word) |
 | `q` `<C-e>` `Q` | close doc, reopen closed, quit |
 | `<F11>` `<F5>` | fullscreen, presentation |
 | `<C-k>` | action palette |
