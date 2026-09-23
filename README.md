@@ -62,7 +62,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `<A-w>` `<A-o>` | switch pane, back to one pane |
 | `<C-o>` `<C-i>` | jump history |
 | `<C-Left>` `<C-Right>` `B` | switch documents, document list |
-| `o` | fuzzy file finder, recent files first (`<C-o>` Windows dialog; Word `.docx` too, rendered through Word) |
+| `o` | fuzzy file finder, recent files first (`<Tab>` marks several, `Enter` opens them all; `<C-o>` Windows dialog; Word `.docx` too, rendered through Word) |
 | `q` `<C-e>` `Q` | close doc, reopen closed, quit |
 | `<F11>` `<F5>` | fullscreen, presentation |
 | `<C-k>` | action palette |
