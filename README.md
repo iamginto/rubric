@@ -42,7 +42,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `gg` `G` `42G` | first / last / page 42 |
 | `s` `a` | fit width / fit page |
 | `+` `-` `<C-0>` | zoom, reset |
-| `r` `d` `<C-r>` | rotate, two-page, night mode |
+| `r` `d` `<C-r>` | rotate, two-page, night mode (recolors to the theme) |
 | `<Tab>` | table of contents |
 | `/` `?` `n` `N` | search |
 | `Shift`+drag, `V`, `u` | highlight, list, undo |
@@ -50,6 +50,8 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `<Delete>` | delete mode: click a note or highlight to kill it |
 | `S` | page organizer: move, delete, rotate, extract pages |
 | `X` | redact pen: drag a box or click a word, `Enter` writes the copy |
+| `<C-c>` | copy the shift+dragged text |
+| `T` | tex mode: new or open a `.tex`, live PDF beside it (`<C-s>` compile, `<Esc>` to the PDF, `<C-w>` close) |
 | `U` `<C-z>` | bring back the last deleted thing |
 | `m<x>` `'<x>` | set / jump to mark |
 | `M` `b` | add bookmark, bookmarks panel |
