@@ -75,18 +75,6 @@ Counts work everywhere (`5j`). `Ctrl`+wheel zooms around the cursor.
 Themes (10) and language (English, Turkish, German) are picked from the
 palette too, or with `:theme` and `:lang`.
 
-## PDF tools
-
-None of these touch the original; each writes a new file next to it.
-
-- `S` page organizer: thumbnails, `hjkl` to walk, `HJKL` to carry, `x` delete,
-  `r`/`R` rotate, `v` select, `e` extract, `u` undo, `w` write.
-- `X` redact pen, or `:redact <word>` for every match. Text is really removed,
-  not just covered (`<name>-redacted.pdf`).
-- `:merge` appends chosen PDFs, each keeps its own TOC entry.
-- `:strip-metadata` drops author, app, dates, XMP and comment authors.
-- `:export-highlights` embeds highlights and margin notes as real PDF comments.
-
 ## Config
 
 Copy `rubricrc.ornek` to `%APPDATA%\rubric\rubricrc`. Every setting and
