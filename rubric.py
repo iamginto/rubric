@@ -982,8 +982,9 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tex_sync_baska":   "that comes from {dosya}:{satir}",
         "tex_sync_satir":   "line {satir}",
         "yenilendi":        "{ad} changed on disk - reloaded",
-        "bulucu_ipucu":     "type to filter   up/down move   enter open   ctrl-o windows dialog   esc",
+        "bulucu_ipucu":     "type to filter   up/down move   tab select   enter open   ctrl-o windows dialog   esc",
         "bulucu_sayi":      "{n}/{toplam}",
+        "bulucu_secili":    "[{n}]",
         "bulucu_taraniyor": "scanning...",
         "word_cevriliyor":  "word: converting {ad} with Word...",
         "word_suruyor":     "still converting {ad}, one at a time",
@@ -1249,8 +1250,9 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tex_sync_baska":   "orası {dosya}:{satir} dosyasından",
         "tex_sync_satir":   "satır {satir}",
         "yenilendi":        "{ad} diskte değişti - yeniden yüklendi",
-        "bulucu_ipucu":     "yaz, süz   yukarı/aşağı gez   enter aç   ctrl-o windows penceresi   esc",
+        "bulucu_ipucu":     "yaz, süz   yukarı/aşağı gez   tab seç   enter aç   ctrl-o windows penceresi   esc",
         "bulucu_sayi":      "{n}/{toplam}",
+        "bulucu_secili":    "[{n}]",
         "bulucu_taraniyor": "taranıyor...",
         "word_cevriliyor":  "word: {ad} Word ile çevriliyor...",
         "word_suruyor":     "{ad} hâlâ çevriliyor, sırayla",
@@ -1517,8 +1519,9 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tex_sync_baska":   "das kommt aus {dosya}:{satir}",
         "tex_sync_satir":   "Zeile {satir}",
         "yenilendi":        "{ad} wurde geändert - neu geladen",
-        "bulucu_ipucu":     "tippen filtert   hoch/runter   Enter öffnet   Strg-O Windows-Dialog   Esc",
+        "bulucu_ipucu":     "tippen filtert   hoch/runter   Tab wählt   Enter öffnet   Strg-O Windows-Dialog   Esc",
         "bulucu_sayi":      "{n}/{toplam}",
+        "bulucu_secili":    "[{n}]",
         "bulucu_taraniyor": "wird durchsucht...",
         "word_cevriliyor":  "word: {ad} wird mit Word umgewandelt...",
         "word_suruyor":     "{ad} wird noch umgewandelt, eins nach dem anderen",
@@ -2400,6 +2403,9 @@ class Rubric(tk.Tk):
         self.bulucu_girdi: tk.Entry | None = None
         self._bulucu_dosyalar: list[str] = []
         self._bulucu_sonuclar: list[str] = []
+        self._bulucu_secilenler: dict[str, str] = {}   # normcase -> yol, secilis sirasiyla
+        self._son_kume: set[str] = set()
+        self._bulucu_sayi = ""
         self._bulucu_is = None
         self._bulucu_zaman = 0.0
         self._secim_karti_secili = 0
@@ -7614,7 +7620,8 @@ class Rubric(tk.Tk):
     # acilanlar + taranan klasorlerdeki belgeler bulanik eslenir. Tarama ayri
     # is parcaciginda (Masaustu, Indirilenler, Belgeler, OneDrive; derinlik
     # sinirli, BULUCU_SINIR dosya); 30 sn'den eskiyse acilista yenilenir.
-    # Ctrl-O Windows'un kendi penceresini acar.
+    # Ctrl-O Windows'un kendi penceresini acar. Tab / Ctrl+tik satiri isaretler
+    # (suzme degisse de isaret kalir); Enter isaretlilerin hepsini acar.
 
     def dosya_bulucu(self) -> None:
         if self.mod == "palet":
@@ -7622,6 +7629,7 @@ class Rubric(tk.Tk):
         if self.bulucu is None:
             self._bulucuyu_kur()
         self._bulucu_renkleri()
+        self._bulucu_secilenler = {}
         self.bulucu_desen.set("")
         if time.monotonic() - self._bulucu_zaman > 30:
             self._bulucu_tara()
@@ -7664,10 +7672,13 @@ class Rubric(tk.Tk):
             g.bind(t, tus(lambda: self._bulucu_gez(-1)))
         g.bind("<Next>", tus(lambda: self._bulucu_gez(10)))
         g.bind("<Prior>", tus(lambda: self._bulucu_gez(-10)))
+        g.bind("<Tab>", tus(lambda: self._bulucu_isaretle(1)))
+        g.bind("<Shift-Tab>", tus(lambda: self._bulucu_isaretle(-1)))
         g.bind("<Control-o>", tus(lambda: (self._bulucuyu_kapat(), self._windows_ac())))
         g.bind("<FocusOut>", lambda _e: self.after(60, self._bulucu_odagi_yokla))
         self.bulucu_liste.bind("<ButtonRelease-1>", lambda _e: self.bulucu_girdi.focus_set())
         self.bulucu_liste.bind("<Double-Button-1>", lambda _e: self._bulucu_ac())
+        self.bulucu_liste.bind("<Control-Button-1>", self._bulucu_tikla_isaretle)
 
     def _bulucu_renkleri(self) -> None:
         a = self.ayar
@@ -7792,22 +7803,72 @@ class Rubric(tk.Tk):
             puanli.sort()
             secilen = [y for _, y in puanli[:200]]
         self._bulucu_sonuclar = secilen
+        self._son_kume = son_kume
+        self._bulucu_listeyi_ciz()
+        if secilen:
+            self.bulucu_liste.selection_set(0)
+            self.bulucu_liste.see(0)
+        taraniyor = self._bulucu_is is not None and self._bulucu_is.is_alive()
+        self._bulucu_sayi = self.m("bulucu_taraniyor") if taraniyor else \
+            self.m("bulucu_sayi", n=len(secilen), toplam=len(havuz))
+        self._bulucu_ipucunu_yaz()
+
+    def _bulucu_satiri(self, y: str) -> str:
         ev = os.path.expanduser("~")
+        dizin = os.path.dirname(y)
+        if os.path.normcase(dizin).startswith(os.path.normcase(ev)):
+            dizin = "~" + dizin[len(ev):]
+        isaret = "*" if os.path.normcase(y) in self._son_kume else " "
+        kutu = ""                                 # [x] kolonu yalnizca bir sey secilince
+        if self._bulucu_secilenler:
+            kutu = "[x]" if os.path.normcase(y) in self._bulucu_secilenler else "[ ]"
+        return f" {kutu}{isaret} {os.path.basename(y):<42}  {dizin}"
+
+    def _bulucu_listeyi_ciz(self) -> None:
         liste = self.bulucu_liste
         liste.delete(0, "end")
-        for y in secilen:
-            dizin = os.path.dirname(y)
-            if os.path.normcase(dizin).startswith(os.path.normcase(ev)):
-                dizin = "~" + dizin[len(ev):]
-            isaret = "*" if os.path.normcase(y) in son_kume else " "
-            liste.insert("end", f" {isaret} {os.path.basename(y):<42}  {dizin}")
-        if secilen:
-            liste.selection_set(0)
-            liste.see(0)
-        taraniyor = self._bulucu_is is not None and self._bulucu_is.is_alive()
-        sayi = self.m("bulucu_taraniyor") if taraniyor else \
-            self.m("bulucu_sayi", n=len(secilen), toplam=len(havuz))
+        for y in self._bulucu_sonuclar:
+            liste.insert("end", self._bulucu_satiri(y))
+
+    def _bulucu_ipucunu_yaz(self) -> None:
+        sayi = self._bulucu_sayi
+        if self._bulucu_secilenler:
+            sayi += "  " + self.m("bulucu_secili", n=len(self._bulucu_secilenler))
         self.bulucu_ipucu.config(text=f"{sayi}   {self.m('bulucu_ipucu')}")
+
+    def _bulucu_isaretle(self, adim: int = 0, i: int | None = None) -> None:
+        """Tab: imlecteki satiri isaretler / isaretini kaldirir, sonra `adim` gezer."""
+        if i is None:
+            secili = self.bulucu_liste.curselection()
+            if not secili:
+                return
+            i = secili[0]
+        if i >= len(self._bulucu_sonuclar):
+            return
+        y = self._bulucu_sonuclar[i]
+        n = os.path.normcase(y)
+        onceki_bos = not self._bulucu_secilenler
+        if n in self._bulucu_secilenler:
+            del self._bulucu_secilenler[n]
+        else:
+            self._bulucu_secilenler[n] = y
+        liste = self.bulucu_liste
+        if onceki_bos or not self._bulucu_secilenler:   # kolon belirdi / kayboldu
+            self._bulucu_listeyi_ciz()
+        else:
+            liste.delete(i)
+            liste.insert(i, self._bulucu_satiri(y))
+        liste.selection_clear(0, "end")
+        liste.selection_set(i)
+        liste.see(i)
+        if adim:
+            self._bulucu_gez(adim)
+        self._bulucu_ipucunu_yaz()
+
+    def _bulucu_tikla_isaretle(self, e) -> str:
+        self._bulucu_isaretle(0, self.bulucu_liste.nearest(e.y))
+        self.bulucu_girdi.focus_set()
+        return "break"
 
     def _bulucu_gez(self, adim: int) -> None:
         liste = self.bulucu_liste
@@ -7821,6 +7882,18 @@ class Rubric(tk.Tk):
         liste.see(i)
 
     def _bulucu_ac(self) -> None:
+        if self._bulucu_secilenler:
+            # _windows_ac gibi: sonuncusu acilir, digerleri listeye girer
+            yollar = list(self._bulucu_secilenler.values())
+            self._bulucuyu_kapat()
+            tex = [y for y in yollar if y.lower().endswith(".tex")]
+            yollar = [y for y in yollar if not y.lower().endswith(".tex")]
+            self._arkadakileri_ekle(yollar)
+            if yollar:
+                self.belgeyi_ac(yollar[-1])
+            if tex:                               # .tex listeye girmez, tex modunda acilir
+                self.tex_ac(tex[-1])
+            return
         secili = self.bulucu_liste.curselection()
         if not secili or secili[0] >= len(self._bulucu_sonuclar):
             return
