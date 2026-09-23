@@ -46,6 +46,9 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `<Tab>` | table of contents |
 | `/` `?` `n` `N` | search |
 | `Shift`+drag, `V`, `u` | highlight, list, undo |
+| `i` | margin note (hover the `[n]` to read it) |
+| `<Delete>` | delete mode: click a note or highlight to kill it |
+| `U` `<C-z>` | bring back the last deleted thing |
 | `m<x>` `'<x>` | set / jump to mark |
 | `M` `b` | add bookmark, bookmarks panel |
 | `<C-l>` | show links on the page |
