@@ -43,6 +43,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `s` `a` | fit width / fit page |
 | `+` `-` `<C-0>` | zoom, reset |
 | `r` `d` `<C-r>` | rotate, two-page, night mode (recolors to the theme) |
+| `D` | book layout: cover alone, then facing pages |
 | `<Tab>` | table of contents |
 | `/` `?` `n` `N` | search |
 | `Shift`+drag, `V`, `u` | highlight, list, undo |
@@ -61,7 +62,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `<A-Right>` `<A-Left>` | send doc to right / left pane |
 | `<A-w>` `<A-o>` | switch pane, back to one pane |
 | `<C-o>` `<C-i>` | jump history |
-| `<C-Left>` `<C-Right>` `B` | switch documents, document list (`J`/`K` or drag to reorder) |
+| `<C-Left>` `<C-Right>` `B` | switch documents, document list (`J`/`K` or drag to reorder, drag across to the other pane, `/` filter) |
 | `o` | fuzzy file finder, recent files first (`<Tab>` marks several, `Enter` opens them all; `<C-o>` Windows dialog; Word `.docx` too, rendered through Word) |
 | `q` `<C-e>` `Q` | close doc, reopen closed, quit |
 | `<F11>` `<F5>` | fullscreen, presentation |

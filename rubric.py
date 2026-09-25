@@ -36,6 +36,14 @@ import sys
 # penceresi actiriyor. WM_COPYDATA ayni oturumun icinde kalir, izin istemez.
 
 IPC_SINIF = "rubric.ileti.penceresi"
+
+
+def _ipc_sinifi() -> str:
+    """Testler (testler\\yalitim.py) RUBRIC_DENEME'yi gecici bir klasore
+    ayarlar: o surecin ileti penceresi ayri sinifla kurulur, acik rubric'e
+    belge gitmez, acik rubric de ona devretmez."""
+    deneme = os.environ.get("RUBRIC_DENEME")
+    return f"{IPC_SINIF}.{os.path.basename(deneme)}" if deneme else IPC_SINIF
 _IPC_HWND_MESSAGE = -3
 _IPC_WM_COPYDATA = 0x004A
 _ipc_tutulan: list = []             # yordam + sinif: cop toplayici almasin
@@ -62,7 +70,7 @@ def _ipc_penceresi() -> int:
         u32 = ctypes.windll.user32
         u32.FindWindowExW.restype = wt.HWND
         u32.FindWindowExW.argtypes = [wt.HWND, wt.HWND, wt.LPCWSTR, wt.LPCWSTR]
-        return int(u32.FindWindowExW(wt.HWND(_IPC_HWND_MESSAGE), None, IPC_SINIF, None) or 0)
+        return int(u32.FindWindowExW(wt.HWND(_IPC_HWND_MESSAGE), None, _ipc_sinifi(), None) or 0)
     except Exception:
         return 0
 
@@ -117,7 +125,7 @@ def _ipc_dinle(kuyruk: list) -> int:
         sinif = _PENCERE_SINIFI()
         sinif.lpfnWndProc = ctypes.cast(yordam_turu(yordam), ctypes.c_void_p)
         sinif.hInstance = ctypes.windll.kernel32.GetModuleHandleW(None)
-        sinif.lpszClassName = IPC_SINIF
+        sinif.lpszClassName = _ipc_sinifi()
         _ipc_tutulan.append(sinif)
         u32.RegisterClassW.argtypes = [ctypes.POINTER(_PENCERE_SINIFI)]
         u32.RegisterClassW(ctypes.byref(sinif))   # zaten kayitliysa da sorun degil
@@ -126,7 +134,7 @@ def _ipc_dinle(kuyruk: list) -> int:
                                         ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                         ctypes.c_int, wt.HWND, wt.HMENU, wt.HINSTANCE,
                                         ctypes.c_void_p]
-        return int(u32.CreateWindowExW(0, IPC_SINIF, "rubric", 0, 0, 0, 0, 0,
+        return int(u32.CreateWindowExW(0, _ipc_sinifi(), "rubric", 0, 0, 0, 0, 0,
                                        wt.HWND(_IPC_HWND_MESSAGE), None,
                                        sinif.hInstance, None) or 0)
     except Exception:
@@ -273,9 +281,11 @@ def _tek_pencere_ister() -> bool:
     asagida, yani pymupdf'ten sonra tanimli - oysa bu kararin pymupdf import
     edilmeden verilmesi gerekiyor, kazanc oradan geliyor.
     """
-    kok = os.environ.get("APPDATA") or os.path.expanduser("~")
+    kok = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "rubric")
+    if os.environ.get("RUBRIC_DENEME"):         # ayar_dizini() gibi; o daha asagida tanimli
+        kok = os.path.join(os.environ["RUBRIC_DENEME"], "ayar")
     try:
-        with open(os.path.join(kok, "rubric", "rubricrc"), encoding="utf-8") as f:
+        with open(os.path.join(kok, "rubricrc"), encoding="utf-8") as f:
             for satir in f:
                 p = satir.split("#")[0].split()
                 if len(p) >= 2 and p[0] == "set" and p[1] == "tek-pencere":
@@ -372,6 +382,9 @@ VARSAYILAN_AYAR = {
     "kenar-bosluk":   14,          # tuval kenari ile sayfa arasi
     "sayfa-arasi":    10,          # sayfalar arasi bosluk
     "sutunlar":       1,           # yan yana sayfa sayisi
+    # Cift sayfada ilk sayfa (kapak) tek basina sagda durur, sonra 2-3, 4-5...:
+    # basili kitaptaki gibi sol sayfa cift, sag sayfa tek numarali. D acar/kapar.
+    "kitap-duzeni":   False,
 
     # --- davranis ---
     "kaydirma-adimi":      60,     # j/k ile kayan piksel
@@ -492,6 +505,7 @@ VARSAYILAN_TUSLAR = {
     "s": "sigdir-genislik", "a": "sigdir-sayfa",    "<C-0>": "yakinlastirma-sifirla",
 
     "r": "dondur",          "<C-r>": "ters-renk",   "d": "cift-sayfa",
+    "D": "kitap-duzeni",
     "<Tab>": "icindekiler", "<F11>": "tam-ekran",   "<F5>": "sunum",
     "<C-m>": "durum-cubugu", "<C-k>": "eylemler",
 
@@ -582,6 +596,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "yakinlastirma-sifirla": "actual size (100%)",
         "dondur":         "rotate 90 degrees",
         "cift-sayfa":     "toggle single / double page layout",
+        "kitap-duzeni":   "book layout: cover alone, then facing pages 2-3, 4-5 (double page)",
         "ters-renk":      "night mode: recolor pages to the theme",
 
         "icindekiler":    "table of contents - j k Enter Esc",
@@ -619,6 +634,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "tex mode: .tex source beside its live PDF (again: focus the editor)",
         "tex-derle":      "save and compile the .tex now",
         "tex-kapat":      "close tex mode (the source is saved)",
+        "tex-pdf-kaydet": "save the preview as a PDF without closing tex mode",
         "tex-sync":       "show the editor line in the PDF (ctrl-j; ctrl+click the PDF goes back)",
         "donustur":       "convert this document: PDF, plain text or PNG pages",
 
@@ -668,6 +684,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "yakinlastirma-sifirla": "gerçek boyut (%100)",
         "dondur":         "90 derece döndür",
         "cift-sayfa":     "tek / çift sayfa düzeni arasında geçiş",
+        "kitap-duzeni":   "kitap düzeni: kapak tek, sonra karşılıklı 2-3, 4-5 (çift sayfa)",
         "ters-renk":      "gece modu: sayfayı temanın renklerine boya",
 
         "icindekiler":    "içindekiler paneli - j k Enter Esc",
@@ -705,6 +722,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "tex modu: .tex kaynağı yanında canlı PDF (yine basınca: editöre geç)",
         "tex-derle":      ".tex'i kaydet ve şimdi derle",
         "tex-kapat":      "tex modunu kapat (kaynak kaydedilir)",
+        "tex-pdf-kaydet": "önizlemeyi tex modunu kapatmadan PDF olarak kaydet",
         "tex-sync":       "editördeki satırı PDF'te göster (ctrl-j; PDF'te ctrl+tık geri götürür)",
         "donustur":       "belgeyi dönüştür: PDF, düz metin ya da PNG sayfalar",
 
@@ -754,6 +772,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "yakinlastirma-sifirla": "Originalgröße (100%)",
         "dondur":         "um 90 Grad drehen",
         "cift-sayfa":     "zwischen Einzel- und Doppelseite wechseln",
+        "kitap-duzeni":   "Buchansicht: Titel allein, dann gegenüber 2-3, 4-5 (Doppelseite)",
         "ters-renk":      "Nachtmodus: Seiten in Themenfarben umfärben",
 
         "icindekiler":    "Inhaltsverzeichnis - j k Enter Esc",
@@ -791,6 +810,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "tex-modu":       "TeX-Modus: .tex-Quelltext neben dem Live-PDF (nochmal: zum Editor)",
         "tex-derle":      ".tex speichern und jetzt kompilieren",
         "tex-kapat":      "TeX-Modus schließen (Quelltext wird gespeichert)",
+        "tex-pdf-kaydet": "Vorschau als PDF speichern, ohne den TeX-Modus zu schließen",
         "tex-sync":       "Editorzeile im PDF zeigen (Strg-J; Strg+Klick im PDF führt zurück)",
         "donustur":       "Dokument umwandeln: PDF, reiner Text oder PNG-Seiten",
 
@@ -831,7 +851,7 @@ KOMUT_GRUPLARI = [
     ]),
     ("yakinlastirma ve duzen", [
         "yakinlastir", "uzaklastir", "sigdir-genislik", "sigdir-sayfa",
-        "yakinlastirma-sifirla", "dondur", "cift-sayfa", "ters-renk",
+        "yakinlastirma-sifirla", "dondur", "cift-sayfa", "kitap-duzeni", "ters-renk",
     ]),
     ("ekran", ["icindekiler", "eylemler", "tam-ekran", "sunum", "durum-cubugu",
                "baslik-cubugu", "baglantilar", "dil"]),
@@ -846,7 +866,7 @@ KOMUT_GRUPLARI = [
                "cik"]),
     ("pdf araclari", ["sayfa-duzeni", "birlestir", "karartma-kalemi",
                       "karartmayi-uygula", "ustveri-temizle"]),
-    ("tex", ["tex-modu", "tex-derle", "tex-sync", "tex-kapat"]),
+    ("tex", ["tex-modu", "tex-derle", "tex-sync", "tex-pdf-kaydet", "tex-kapat"]),
     ("bolmeler", ["bolme-saga", "bolme-sola", "bolme-gec", "bolme-tek"]),
     ("ayarlar", ["belge-siniri", "geri-acma-siniri", "yazici", "tepsi"]),
     # Temalar gibi: palette tek satir, Enter renk listesini acar; tusu yok.
@@ -967,6 +987,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kapali":           "off",
         "ters_renk_durum":  "inverted colors: {durum}",
         "sutun_n":          ("{n} column", "{n} columns"),
+        "kitap_durum":      "book layout {durum}",
         "ust_bar_durum":    "top bar {durum}",
         "tepsi_durum":      "tray mode {durum}",
         "tepsi_ac":         "open",
@@ -1025,6 +1046,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tex_pdf_kaydedildi": "PDF saved: {ad}",
         "tex_pdf_silindi":  "preview dropped, no PDF written",
         "tex_kapali":       "tex mode is off (T opens it)",
+        "tex_pdf_yok":      "no preview yet - wait for the first compile",
         "tex_motor_yok":    "{motor} not found - install MiKTeX / TeX Live or :set tex-motoru",
         "tex_derleniyor":   "[compiling]",
         "tex_tamam":        "[ok {sn}s]",
@@ -1152,7 +1174,9 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "sinir_baslik":     "reopen limit",
         "belge_sinir_baslik": "open document limit",
         "belge_sinir_secildi": "up to {n} documents open at once",
-        "belge_karti_ipucu": "j/k move  J/K or drag: reorder  Enter go  x close  Esc",
+        "belge_karti_ipucu": "j/k move  J/K or drag: reorder  H/L: to a left/right pane  / filter  Enter go  x close  Esc",
+        "belge_karti_ipucu_iki": "h/l column  J/K: reorder  H/L or drag across: other pane  / filter  Enter go  x close  Esc",
+        "belge_karti_suzmede": "filter is on: order can't change (Esc clears it)",
         "belge_karti_tasindi": "{ad} is now {sira}. in the list",
         "sinir_satir":      ("{n} document", "{n} documents"),
         "sinir_varsayilan": "default",
@@ -1247,6 +1271,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kapali":           "kapalı",
         "ters_renk_durum":  "ters renk: {durum}",
         "sutun_n":          "{n} sütun",
+        "kitap_durum":      "kitap düzeni {durum}",
         "ust_bar_durum":    "üst bar {durum}",
         "tepsi_durum":      "tepsi modu {durum}",
         "tepsi_ac":         "aç",
@@ -1305,6 +1330,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tex_pdf_kaydedildi": "PDF kaydedildi: {ad}",
         "tex_pdf_silindi":  "önizleme silindi, PDF yazılmadı",
         "tex_kapali":       "tex modu kapalı (T açar)",
+        "tex_pdf_yok":      "henüz önizleme yok - ilk derlemeyi bekle",
         "tex_motor_yok":    "{motor} bulunamadı - MiKTeX / TeX Live kur ya da :set tex-motoru",
         "tex_derleniyor":   "[derleniyor]",
         "tex_tamam":        "[tamam {sn}sn]",
@@ -1433,7 +1459,9 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "sinir_baslik":     "geri açma sınırı",
         "belge_sinir_baslik": "açık belge sınırı",
         "belge_sinir_secildi": "aynı anda en çok {n} belge açık",
-        "belge_karti_ipucu": "j/k gez  J/K ya da sürükle: taşı  Enter git  x kapat  Esc",
+        "belge_karti_ipucu": "j/k gez  J/K ya da sürükle: sırala  H/L: sol/sağ bölmeye  / süz  Enter git  x kapat  Esc",
+        "belge_karti_ipucu_iki": "h/l sütun  J/K: sırala  H/L ya da öbür yana sürükle: bölme değiştir  / süz  Enter git  x kapat  Esc",
+        "belge_karti_suzmede": "süzme açık: sıra değişmez (Esc süzmeyi kaldırır)",
         "belge_karti_tasindi": "{ad} artık listede {sira}.",
         "sinir_satir":      "{n} belge",
         "sinir_varsayilan": "varsayılan",
@@ -1528,6 +1556,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "kapali":           "aus",
         "ters_renk_durum":  "invertierte Farben: {durum}",
         "sutun_n":          ("{n} Spalte", "{n} Spalten"),
+        "kitap_durum":      "Buchansicht {durum}",
         "ust_bar_durum":    "Titelleiste {durum}",
         "tepsi_durum":      "Tray-Modus {durum}",
         "tepsi_ac":         "öffnen",
@@ -1586,6 +1615,7 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "tex_pdf_kaydedildi": "PDF gespeichert: {ad}",
         "tex_pdf_silindi":  "Vorschau verworfen, kein PDF geschrieben",
         "tex_kapali":       "TeX-Modus ist aus (T öffnet ihn)",
+        "tex_pdf_yok":      "noch keine Vorschau - erste Kompilierung abwarten",
         "tex_motor_yok":    "{motor} nicht gefunden - MiKTeX / TeX Live installieren oder :set tex-motoru",
         "tex_derleniyor":   "[kompiliert]",
         "tex_tamam":        "[ok {sn}s]",
@@ -1715,7 +1745,9 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "sinir_baslik":     "Wiederöffnen-Limit",
         "belge_sinir_baslik": "Limit offener Dokumente",
         "belge_sinir_secildi": "höchstens {n} Dokumente gleichzeitig offen",
-        "belge_karti_ipucu": "j/k bewegen  J/K oder ziehen: umsortieren  Enter öffnen  x schließen  Esc",
+        "belge_karti_ipucu": "j/k bewegen  J/K oder ziehen: umsortieren  H/L: in linke/rechte Ansicht  / filtern  Enter öffnen  x schließen  Esc",
+        "belge_karti_ipucu_iki": "h/l Spalte  J/K: umsortieren  H/L oder hinüberziehen: andere Ansicht  / filtern  Enter öffnen  x schließen  Esc",
+        "belge_karti_suzmede": "Filter aktiv: Reihenfolge bleibt (Esc hebt ihn auf)",
         "belge_karti_tasindi": "{ad} ist jetzt {sira}. in der Liste",
         "sinir_satir":      ("{n} Dokument", "{n} Dokumente"),
         "sinir_varsayilan": "Standard",
@@ -1779,6 +1811,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "yakinlastir": "zoom-in", "uzaklastir": "zoom-out", "sigdir-genislik": "fit-width",
         "sigdir-sayfa": "fit-page", "yakinlastirma-sifirla": "zoom-reset",
         "dondur": "rotate", "cift-sayfa": "double-page", "ters-renk": "invert-colors",
+        "kitap-duzeni": "book-layout",
         "icindekiler": "contents", "eylemler": "actions", "tam-ekran": "fullscreen",
         "sunum": "presentation", "durum-cubugu": "status-bar", "baslik-cubugu": "top-bar",
         "dil": "language",
@@ -1796,7 +1829,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "karartma-kalemi": "redact-pen", "karartmayi-uygula": "apply-redaction",
         "ustveri-temizle": "strip-metadata",
         "kopyala": "copy", "tex-modu": "tex", "tex-derle": "tex-compile",
-        "tex-kapat": "tex-close",
+        "tex-kapat": "tex-close", "tex-pdf-kaydet": "tex-save-pdf",
         "tex-sync": "tex-sync",
         "donustur": "convert",
         "ac": "open-file", "yeniden-yukle": "reload", "komut-modu": "command-line",
@@ -1821,7 +1854,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "yakinlastir": "yakınlaştır", "uzaklastir": "uzaklaştır",
         "sigdir-genislik": "sığdır-genişlik", "sigdir-sayfa": "sığdır-sayfa",
         "yakinlastirma-sifirla": "yakınlaştırma-sıfırla", "dondur": "döndür",
-        "cift-sayfa": "çift-sayfa", "ters-renk": "ters-renk",
+        "cift-sayfa": "çift-sayfa", "ters-renk": "ters-renk", "kitap-duzeni": "kitap-düzeni",
         "icindekiler": "içindekiler", "eylemler": "eylemler", "tam-ekran": "tam-ekran",
         "sunum": "sunum", "durum-cubugu": "durum-çubuğu", "baslik-cubugu": "başlık-çubuğu",
         "dil": "dil",
@@ -1839,7 +1872,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "karartma-kalemi": "karartma-kalemi", "karartmayi-uygula": "karartmayı-uygula",
         "ustveri-temizle": "üstveri-temizle",
         "kopyala": "kopyala", "tex-modu": "tex-modu", "tex-derle": "tex-derle",
-        "tex-kapat": "tex-kapat",
+        "tex-kapat": "tex-kapat", "tex-pdf-kaydet": "tex-pdf-kaydet",
         "tex-sync": "tex-eşle",
         "donustur": "dönüştür",
         "ac": "aç", "yeniden-yukle": "yeniden-yükle", "komut-modu": "komut-satırı",
@@ -1865,6 +1898,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sigdir-genislik": "breite-einpassen", "sigdir-sayfa": "seite-einpassen",
         "yakinlastirma-sifirla": "zoom-zurücksetzen", "dondur": "drehen",
         "cift-sayfa": "doppelseite", "ters-renk": "farben-umkehren",
+        "kitap-duzeni": "buchansicht",
         "icindekiler": "inhalt", "eylemler": "aktionen", "tam-ekran": "vollbild",
         "sunum": "präsentation", "durum-cubugu": "statusleiste",
         "baslik-cubugu": "titelleiste", "dil": "sprache",
@@ -1883,7 +1917,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "karartma-kalemi": "schwärzstift", "karartmayi-uygula": "schwärzung-anwenden",
         "ustveri-temizle": "metadaten-entfernen",
         "kopyala": "kopieren", "tex-modu": "tex-modus", "tex-derle": "tex-kompilieren",
-        "tex-kapat": "tex-schließen",
+        "tex-kapat": "tex-schließen", "tex-pdf-kaydet": "tex-pdf-speichern",
         "tex-sync": "tex-sync",
         "donustur": "umwandeln",
         "ac": "öffnen", "yeniden-yukle": "neu-laden", "komut-modu": "befehlszeile",
@@ -2182,11 +2216,15 @@ def _bulanik_puan(desen: str, metin: str) -> float | None:
 
 
 def veri_dizini() -> str:
+    if os.environ.get("RUBRIC_DENEME"):         # test: gercek durum.json'a dokunma
+        return os.path.join(os.environ["RUBRIC_DENEME"], "veri")
     kok = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
     return os.path.join(kok, "rubric")
 
 
 def ayar_dizini() -> str:
+    if os.environ.get("RUBRIC_DENEME"):         # test: kullanicinin rubricrc'si okunmasin
+        return os.path.join(os.environ["RUBRIC_DENEME"], "ayar")
     kok = os.environ.get("APPDATA") or os.path.expanduser("~")
     return os.path.join(kok, "rubric")
 
@@ -2448,6 +2486,7 @@ class Rubric(tk.Tk):
         # dosya bulucu (o)
         self.bulucu: tk.Frame | None = None
         self.belge_karti: tk.Frame | None = None   # B'nin ortadaki karti
+        self.belge_karti_girdi: tk.Entry | None = None
         self.bulucu_girdi: tk.Entry | None = None
         self._bulucu_dosyalar: list[str] = []
         self._bulucu_sonuclar: list[str] = []
@@ -2921,6 +2960,7 @@ class Rubric(tk.Tk):
         t.bind("<Enter>", fareyle(lambda e: None))
         t.bind("<MouseWheel>", fareyle(self.tekerlek))
         t.bind("<Control-MouseWheel>", fareyle(self.ctrl_tekerlek))
+        t.bind("<Shift-MouseWheel>", fareyle(self.yatay_tekerlek))
         t.bind("<Button-1>", gec(lambda e: self.tuval.focus_set()))
         # Tab'i tuval kendi sinif baglantisiyla odak gezmeye cevirir; once biz
         # yakalayip kesmezsek <Tab> hicbir zaman icindekilere ulasmaz.
@@ -3750,16 +3790,19 @@ class Rubric(tk.Tk):
 
     # -- acik belgeler karti (B) ---------------------------------------------
     #
-    # `o` gibi ortada, Ctrl-K'dan ayri (kullanici istegi, 2026-09-25): bakilan
-    # bolmenin acik belgeleri, <C-Left>/<C-Right>'in sirasiyla. j/k gezer, J/K
-    # (ya da Shift/Ctrl + ok) ve fareyle surukleme satiri tasir, Enter / cift
-    # tik gider, x kapatir; Esc, B, q ya da disari tik karti kapatir.
+    # `o` gibi ortada, Ctrl-K'dan ayri (kullanici istegi, 2026-09-25). Her bolme
+    # bir sutun: bolunmusse solda sol bolmenin, sagda sag bolmenin belgeleri,
+    # <C-Left>/<C-Right>'in sirasiyla. j/k gezer, h/l sutun degistirir, J/K
+    # (ya da Shift/Ctrl + yukari/asagi) ve surukleme sirayi degistirir; H/L
+    # (Shift + sol/sag) ya da oteki sutuna surukleme belgeyi oteki bolmeye atar
+    # (tek bolmedeyken bolmeyi acar). `/` adla suzer. Enter / cift tik gider,
+    # x kapatir; Esc (once suzmeyi), B, q ya da disari tik karti kapatir.
 
     def belge_listesi(self) -> None:
         if self._belge_karti_acik():
             self._belge_kartini_kapat()
             return
-        if not self.belgeler:
+        if not any(b.belgeler for b in self.bolmeler):
             self.bildir(self.m("belge_listesi_bos"), "uyari")
             return
         if self.mod == "palet":
@@ -3771,42 +3814,79 @@ class Rubric(tk.Tk):
             self._belge_kartini_kur()
         self._belge_karti_renkleri()
         self.mod = "belgeler"                   # fare bolme degistirmesin, durumda [belgeler]
+        self._bk_desen.set("")
+        self._bk_suzgec_goster(False)
+        self._bk_sutun = self.etkin
         self._belge_kartini_ciz(max(0, self._sira()))
-        en = max(420, min(980, self.winfo_width() - 80))
-        self.belge_karti.place(relx=0.5, rely=0.42, anchor="center", width=en)
+        self._bk_yerlestir()
         self.belge_karti.lift()
         self.belge_karti.focus_set()
         self.durumu_tazele()
+
+    def _bk_yerlestir(self) -> None:
+        tek = max(420, min(980, self.winfo_width() - 80))
+        en = max(tek, min(1400, self.winfo_width() - 60)) if self.bolundu() else tek
+        self.belge_karti.place(relx=0.5, rely=0.42, anchor="center", width=en)
 
     def _belge_karti_acik(self) -> bool:
         return self.belge_karti is not None and bool(self.belge_karti.winfo_ismapped())
 
     def _belge_kartini_kur(self) -> None:
         k = self.belge_karti = tk.Frame(self, bd=0, highlightthickness=1, takefocus=True)
-        self.belge_karti_baslik = tk.Label(k, anchor="w", bd=0, padx=16, pady=10)
-        self.belge_karti_baslik.pack(side="top", fill="x")
+        self.belge_karti_ust = tk.Frame(k, bd=0)
+        self.belge_karti_ust.pack(side="top", fill="x")
+        self.belge_karti_baslik = tk.Label(self.belge_karti_ust, anchor="w", bd=0,
+                                           padx=16, pady=10)
+        self.belge_karti_baslik.pack(side="left")
+        # `/` ile beliren suzme satiri: baslik yaninda "> desen"
+        self.belge_karti_istem = tk.Label(self.belge_karti_ust, text="/", bd=0, padx=4)
+        self._bk_desen = tk.StringVar()
+        g = self.belge_karti_girdi = tk.Entry(self.belge_karti_ust, textvariable=self._bk_desen,
+                                              bd=0, highlightthickness=0, insertwidth=8)
         self.belge_karti_cizgi = tk.Frame(k, height=1, bd=0)
         self.belge_karti_cizgi.pack(side="top", fill="x")
-        liste = self.belge_karti_liste = tk.Listbox(
-            k, bd=0, highlightthickness=0, activestyle="none", exportselection=False,
-            takefocus=False, height=12, cursor="hand2")
-        liste.pack(side="top", fill="both", expand=True, padx=8, pady=6)
+        self.belge_karti_govde = tk.Frame(k, bd=0)
+        self.belge_karti_govde.pack(side="top", fill="both", expand=True)
+        # iki sutun hep kurulu; tek bolmede yalnizca ilki gorunur
+        self._bk_sutunlar: list[tuple[tk.Label, tk.Listbox]] = []
+        for c in range(2):
+            cer = tk.Frame(self.belge_karti_govde, bd=0)
+            bas = tk.Label(cer, anchor="w", bd=0, padx=12, pady=4)
+            bas.pack(side="top", fill="x")
+            liste = tk.Listbox(cer, bd=0, highlightthickness=0, activestyle="none",
+                               exportselection=False, takefocus=False, height=12, cursor="hand2")
+            liste.pack(side="top", fill="both", expand=True, padx=8, pady=(0, 6))
+            liste.bind("<Button-1>", lambda e, c=c: self._belge_karti_bas(e, c))
+            liste.bind("<B1-Motion>", self._belge_karti_surukle)
+            liste.bind("<ButtonRelease-1>", self._belge_karti_birak)
+            liste.bind("<Double-Button-1>", lambda _e: (self._belge_karti_git(), "break")[1])
+            liste.bind("<MouseWheel>", lambda e, l=liste: (
+                l.yview_scroll(-1 if e.delta > 0 else 1, "units"), "break")[1])
+            self._bk_sutunlar.append((bas, liste))
+        self._bk_cerceveler = [bas.master for bas, _ in self._bk_sutunlar]
+        self.belge_karti_orta = tk.Frame(self.belge_karti_govde, width=1, bd=0)
         self.belge_karti_alt_cizgi = tk.Frame(k, height=1, bd=0)
         self.belge_karti_alt_cizgi.pack(side="top", fill="x")
-        self.belge_karti_ipucu = tk.Label(k, anchor="w", bd=0, padx=16, pady=5)
+        self.belge_karti_ipucu = tk.Label(k, anchor="w", justify="left", bd=0, padx=16, pady=5)
         self.belge_karti_ipucu.pack(side="top", fill="x")
         k.bind("<Key>", self._belge_karti_tus)
         k.bind("<FocusOut>", lambda _e: self.after(60, self._belge_karti_odagi_yokla))
-        # Listbox'in kendi tik davranisi (odak almak, secimi surukleyip genisletmek)
-        # yerine: bas = sec, surukle = tasi, birak = kaydet; odak kartta kalir.
-        liste.bind("<Button-1>", self._belge_karti_bas)
-        liste.bind("<B1-Motion>", self._belge_karti_surukle)
-        liste.bind("<ButtonRelease-1>", self._belge_karti_birak)
-        liste.bind("<Double-Button-1>", lambda _e: (self._belge_karti_git(), "break")[1])
-        liste.bind("<MouseWheel>", lambda e: (liste.yview_scroll(-1 if e.delta > 0 else 1,
-                                                                 "units"), "break")[1])
-        self._belge_karti_tutulan: int | None = None
-        self._belge_karti_tasindi = False
+
+        def tus(islev):
+            return lambda _e: (islev(), "break")[1]
+        self._bk_desen.trace_add("write", lambda *_: self._bk_suzgec_degisti())
+        g.bind("<Return>", tus(self._belge_karti_git))
+        g.bind("<Escape>", tus(lambda: self._bk_suzgec_goster(False)))
+        for t in ("<Down>", "<Tab>", "<Control-j>"):
+            g.bind(t, tus(lambda: (self.belge_karti.focus_set(), self._bk_gez(1))))
+        for t in ("<Up>", "<Control-k>"):
+            g.bind(t, tus(lambda: self._bk_gez(-1)))
+        g.bind("<FocusOut>", lambda _e: self.after(60, self._belge_karti_odagi_yokla))
+        self._bk_sutun = 0
+        self._bk_gorunen: list[list[str]] = [[], []]
+        self._bk_tutulan: tuple[int, int] | None = None     # (sutun, satir) surukleniyor
+        self._bk_tasindi = False
+        self._bk_duzen: bool | None = None      # son yerlesim: bolunmus mu
 
     def _belge_karti_renkleri(self) -> None:
         a = self.ayar
@@ -3815,73 +3895,183 @@ class Rubric(tk.Tk):
         yt = (a["yazitipi"], a["yazitipi-boy"])
         z = a["palet-zemin"]
         self.belge_karti.config(bg=z, highlightbackground=a["vurgu"], highlightcolor=a["vurgu"])
+        for w in (self.belge_karti_ust, self.belge_karti_govde, *self._bk_cerceveler):
+            w.config(bg=z)
         self.belge_karti_baslik.config(bg=z, fg=a["vurgu"], font=buyuk)
-        for c in (self.belge_karti_cizgi, self.belge_karti_alt_cizgi):
+        self.belge_karti_istem.config(bg=z, fg=a["vurgu"], font=buyuk)
+        self.belge_karti_girdi.config(bg=z, fg=a["cubuk-on"], insertbackground=a["vurgu"],
+                                      font=buyuk)
+        for c in (self.belge_karti_cizgi, self.belge_karti_alt_cizgi, self.belge_karti_orta):
             c.config(bg=a["palet-cerceve"])
-        self.belge_karti_liste.config(bg=z, fg=a["cubuk-on"], selectbackground=a["panel-secili"],
-                                      selectforeground=a["vurgu"], font=orta)
-        self.belge_karti_ipucu.config(bg=a["cubuk-zemin"], fg=a["sonuk"], font=yt,
-                                      text=self.m("belge_karti_ipucu"))
+        for bas, liste in self._bk_sutunlar:
+            bas.config(bg=z, font=yt)
+            liste.config(bg=z, fg=a["cubuk-on"], selectbackground=a["panel-secili"],
+                         selectforeground=a["vurgu"], font=orta)
+        self.belge_karti_ipucu.config(bg=a["cubuk-zemin"], fg=a["sonuk"], font=yt)
 
-    def _belge_kartini_ciz(self, secim: int) -> None:
+    def _bk_suzgec_goster(self, goster: bool) -> None:
+        """`/`: baslik yaninda suzme girdisi; Esc kaldirir (liste tamamina doner)."""
+        if goster:
+            self.belge_karti_istem.pack(side="left")
+            self.belge_karti_girdi.pack(side="left", fill="x", expand=True, padx=(0, 16))
+            self.belge_karti_girdi.focus_set()
+            return
+        self.belge_karti_istem.pack_forget()
+        self.belge_karti_girdi.pack_forget()
+        if self._bk_desen.get():
+            self._bk_desen.set("")               # trace yeniden cizer
+        if self._belge_karti_acik():
+            self.belge_karti.focus_set()
+
+    def _bk_suzgec_degisti(self) -> None:
+        if self._belge_karti_acik():
+            self._belge_kartini_ciz(0)
+
+    def _bk_uyar(self, desen: str, yol: str) -> bool:
+        return not desen or desen in katla(os.path.basename(yol))
+
+    def _belge_kartini_ciz(self, secim: int | None = None) -> None:
+        """Sutunlari bolmelerin listesinden yeniden yazar; imlec `_bk_sutun`da
+        `secim`. satirinda (None: yerinde kalir)."""
+        if secim is None:
+            secim = self._bk_secili()
         ev = os.path.expanduser("~")
-        en = max(len(os.path.basename(y)) for y in self.belgeler)
-        liste = self.belge_karti_liste
-        liste.delete(0, "end")
-        for no, y in enumerate(self.belgeler, 1):
-            isaret = ">" if self._ayni_yol(y, self.pdf_yolu) else " "
-            sayfa = self.m("satir_sayfa", s=int(self.kalici.dosya(y).get("sayfa", 0)) + 1)
-            dizin = os.path.dirname(y)
-            if os.path.normcase(dizin).startswith(os.path.normcase(ev)):
-                dizin = "~" + dizin[len(ev):]
-            liste.insert("end", f" {isaret} {no:>2}  {os.path.basename(y):<{en}}"
-                                f"  {sayfa:>6}   {dizin}")
-        yan = f" [{self._yan_adi(self.bolme)}]" if self.bolundu() else ""
+        desen = katla(self._bk_desen.get().strip())
+        bolundu = self.bolundu()
+        self._bk_sutun = min(self._bk_sutun, len(self.bolmeler) - 1)
+        tum = [y for b in self.bolmeler for y in (b.belgeler or [])]
+        en = max([len(os.path.basename(y)) for y in tum] or [8])
+        sutun_en = max(18, en)
+        for c, (bas, liste) in enumerate(self._bk_sutunlar):
+            b = self.bolmeler[c] if c < len(self.bolmeler) else None
+            belgeler = (b.belgeler or []) if b else []
+            gorunen = [y for y in belgeler if self._bk_uyar(desen, y)]
+            self._bk_gorunen[c] = gorunen
+            liste.delete(0, "end")
+            for y in gorunen:
+                no = b.belgeler.index(y) + 1
+                isaret = ">" if b.pdf_yolu and self._ayni_yol(y, b.pdf_yolu) else " "
+                sayfa = self.m("satir_sayfa", s=int(self.kalici.dosya(y).get("sayfa", 0)) + 1)
+                satir = f" {isaret} {no:>2}  {os.path.basename(y):<{sutun_en}}  {sayfa:>6}"
+                if not bolundu:                  # tek sutunda klasoru de yazacak yer var
+                    dizin = os.path.dirname(y)
+                    if os.path.normcase(dizin).startswith(os.path.normcase(ev)):
+                        dizin = "~" + dizin[len(ev):]
+                    satir += f"   {dizin}"
+                liste.insert("end", satir)
+            if b is not None:
+                vurgu = c == self._bk_sutun and bolundu
+                bas.config(text=f"{'>' if vurgu else ' '} {self._yan_adi(b)}  "
+                                f"{len(b.belgeler or [])}",
+                           fg=self.ayar["vurgu" if vurgu else "sonuk"])
+        # yerlesim: tek bolmede basliksiz tek sutun, bolunmusse iki sutun + ayirici.
+        # Yalnizca degisince yeniden paketlenir: surukleme her satirda yeniden
+        # ciziyor, arada sokulen sutun bir an "gorunmez" sayiliyordu.
+        if self._bk_duzen != bolundu:
+            self._bk_duzen = bolundu
+            for cer in self._bk_cerceveler:
+                cer.pack_forget()
+            self.belge_karti_orta.pack_forget()
+            self._bk_cerceveler[0].pack(side="left", fill="both", expand=True)
+            if bolundu:
+                self.belge_karti_orta.pack(side="left", fill="y", pady=4)
+                self._bk_cerceveler[1].pack(side="left", fill="both", expand=True)
+                self._bk_sutunlar[0][0].pack(side="top", fill="x",
+                                             before=self._bk_sutunlar[0][1])
+            else:
+                self._bk_sutunlar[0][0].pack_forget()
+        toplam = sum(len(b.belgeler or []) for b in self.bolmeler)
         self.belge_karti_baslik.config(
-            text=f"$ {self.ad('belgeler')}{yan}  {len(self.belgeler)}/{self._belge_siniri()}")
-        self._belge_karti_sec(secim)
+            text=f"$ {self.ad('belgeler')}  {toplam}/{self._belge_siniri()}")
+        self.belge_karti_ipucu.config(
+            text=self.m("belge_karti_ipucu_iki" if bolundu else "belge_karti_ipucu"))
+        for c, (_, liste) in enumerate(self._bk_sutunlar):
+            liste.selection_clear(0, "end")
+        self._bk_sec(secim)
 
-    def _belge_karti_sec(self, i: int) -> None:
-        liste = self.belge_karti_liste
+    def _bk_liste(self, c: int | None = None) -> tk.Listbox:
+        return self._bk_sutunlar[self._bk_sutun if c is None else c][1]
+
+    def _bk_sec(self, i: int) -> None:
+        for _, liste in self._bk_sutunlar:
+            liste.selection_clear(0, "end")
+        liste = self._bk_liste()
+        if not liste.size():
+            return
         i = max(0, min(liste.size() - 1, i))
-        liste.selection_clear(0, "end")
         liste.selection_set(i)
         liste.see(i)
 
-    def _belge_karti_secili(self) -> int:
-        secili = self.belge_karti_liste.curselection()
+    def _bk_secili(self) -> int:
+        secili = self._bk_liste().curselection()
         return secili[0] if secili else 0
 
+    def _bk_gez(self, adim: int) -> None:
+        self._bk_sec(self._bk_secili() + adim)
+
+    def _bk_sutuna_gec(self, c: int) -> None:
+        if not self.bolundu() or c == self._bk_sutun or not 0 <= c < len(self.bolmeler):
+            return
+        i = self._bk_secili()
+        self._bk_sutun = c
+        self._belge_kartini_ciz(i)
+
+    def _bk_secili_yol(self) -> str | None:
+        gorunen = self._bk_gorunen[self._bk_sutun]
+        i = self._bk_secili()
+        return gorunen[i] if 0 <= i < len(gorunen) else None
+
     def _belge_karti_tus(self, olay) -> str:
-        ad, i = olay.keysym, self._belge_karti_secili()
-        tasi = olay.state & 0x5                 # Shift ya da Ctrl + ok: tasi
-        if ad in ("J",) or (ad == "Down" and tasi):
-            self._belgeyi_tasi(i, i + 1)
-        elif ad in ("K",) or (ad == "Up" and tasi):
-            self._belgeyi_tasi(i, i - 1)
+        ad, i = olay.keysym, self._bk_secili()
+        shift, ctrl = olay.state & 0x1, olay.state & 0x4
+        if ad == "J" or (ad == "Down" and (shift or ctrl)):
+            self._bk_sirala(i, i + 1)
+        elif ad == "K" or (ad == "Up" and (shift or ctrl)):
+            self._bk_sirala(i, i - 1)
+        elif ad == "H" or (ad == "Left" and shift):
+            self._bk_bolmeye_at(0)
+        elif ad == "L" or (ad == "Right" and shift):
+            self._bk_bolmeye_at(1)
         elif ad in ("j", "Down", "Tab"):
-            self._belge_karti_sec(i + 1)
+            self._bk_gez(1)
         elif ad in ("k", "Up", "ISO_Left_Tab"):
-            self._belge_karti_sec(i - 1)
+            self._bk_gez(-1)
+        elif ad in ("h", "Left"):
+            self._bk_sutuna_gec(0)
+        elif ad in ("l", "Right"):
+            self._bk_sutuna_gec(1)
         elif ad in ("g", "Home"):
-            self._belge_karti_sec(0)
+            self._bk_sec(0)
         elif ad in ("G", "End"):
-            self._belge_karti_sec(len(self.belgeler) - 1)
-        elif ad in ("Return", "KP_Enter", "space", "l"):
+            self._bk_sec(self._bk_liste().size() - 1)
+        elif ad in ("Return", "KP_Enter", "space"):
             self._belge_karti_git()
         elif ad in ("x", "Delete"):
-            self._belge_karti_kapat_satir(i)
+            self._belge_karti_kapat_satir()
+        elif ad == "slash":
+            self._bk_suzgec_goster(True)
+        elif ad == "Escape" and self._bk_desen.get():
+            self._bk_suzgec_goster(False)
         elif ad in ("Escape", "q", "B"):
             self._belge_kartini_kapat()
         return "break"
 
-    def _belgeyi_tasi(self, i: int, j: int, kaydet: bool = True) -> None:
-        """Listede i. belgeyi j. yere tasir; <C-Left>/<C-Right> sirasi da budur."""
-        j = max(0, min(len(self.belgeler) - 1, j))
-        if i == j or not (0 <= i < len(self.belgeler)):
+    def _bk_suzuluyor(self) -> bool:
+        if self._bk_desen.get().strip():
+            self.bildir(self.m("belge_karti_suzmede"), "uyari")
+            return True
+        return False
+
+    def _bk_sirala(self, i: int, j: int, kaydet: bool = True) -> None:
+        """Sutundaki i. belgeyi j. yere tasir; <C-Left>/<C-Right> sirasi da budur."""
+        if self._bk_suzuluyor():
             return
-        yol = self.belgeler.pop(i)
-        self.belgeler.insert(j, yol)
+        belgeler = self.bolmeler[self._bk_sutun].belgeler
+        j = max(0, min(len(belgeler) - 1, j))
+        if i == j or not (0 <= i < len(belgeler)):
+            return
+        yol = belgeler.pop(i)
+        belgeler.insert(j, yol)
         self._belge_kartini_ciz(j)
         self.durumu_tazele()                    # [2/10] yeni sirayla
         if kaydet:
@@ -3889,47 +4079,155 @@ class Rubric(tk.Tk):
             self.bildir(self.m("belge_karti_tasindi", ad=os.path.basename(yol), sira=j + 1),
                         "vurgu")
 
-    def _belge_karti_bas(self, e) -> str:
-        i = self.belge_karti_liste.nearest(e.y)
-        self._belge_karti_tutulan = i
-        self._belge_karti_tasindi = False
-        self._belge_karti_sec(i)
+    def _bk_bolmeye_at(self, hedef_c: int, j: int | None = None) -> None:
+        """Secili belgeyi `hedef_c` (0 sol, 1 sag) bolmesine atar, j. siraya
+        (None: sona). Tek bolmedeyken o yanda bolme acilir."""
+        yol = self._bk_secili_yol()
+        if yol is None or self._bk_suzuluyor():
+            return
+        kaynak = self.bolmeler[self._bk_sutun]
+        if not self.bolundu():
+            if hedef_c == 0:                    # tek bolme zaten solda sayilir: yeni bolme sola
+                hedef = self._bolme_ac(False)
+            else:
+                hedef = self._bolme_ac(True)
+        else:
+            hedef = self.bolmeler[hedef_c]
+        if hedef is kaynak:
+            self.bildir(self.m("bolme_zaten", yan=self._yan_adi(hedef)), "uyari")
+            return
+        self._belgeyi_bolmeye_tasi(yol, kaynak, hedef, j)
+        if hedef in self.bolmeler:
+            self._bk_sutun = self.bolmeler.index(hedef)
+        self._belge_kartini_ciz(hedef.belgeler.index(yol) if yol in hedef.belgeler else 0)
+        self._bk_yerlestir()
+        self.belge_karti.focus_set()
+        self.bildir(self.m("bolmeye_tasindi", ad=os.path.basename(yol),
+                           yan=self._yan_adi(hedef)), "vurgu")
+
+    def _belgeyi_bolmeye_tasi(self, yol: str, kaynak: Bolme, hedef: Bolme,
+                              j: int | None = None) -> None:
+        """`yol`u kaynak bolmenin listesinden hedefinkine tasir. Kaynakta
+        bakilan buysa hedefte o acilir, kaynak komsusuna gecer; kaynak bos
+        kalirsa bolmesi kapanir (q'daki gibi)."""
+        etkin = self.bolme
+        bakiliyordu = bool(kaynak.pdf_yolu) and self._ayni_yol(kaynak.pdf_yolu, yol)
+        with self._bolmede(kaynak):
+            self.konumu_kaydet()
+            i = self._sira(yol)
+            if i >= 0:
+                del self.belgeler[i]
+            if bakiliyordu:
+                if self.belgeler:
+                    self.belgeyi_ac(self.belgeler[min(i, len(self.belgeler) - 1)])
+                else:
+                    self._belgeyi_birak()
+        with self._bolmede(hedef):
+            if self._sira(yol) < 0:
+                self.belgeler.insert(len(self.belgeler) if j is None else j, yol)
+            if bakiliyordu or self.belge is None:
+                self.belgeyi_ac(yol)
+            self._listeyi_kirp()
+        if not kaynak.belgeler:
+            self._bolmeyi_yik(kaynak)
+        self.etkin = self.bolmeler.index(etkin if etkin in self.bolmeler else hedef)
+        if bakiliyordu and etkin is kaynak:     # bakilan belge yer degistirdi: o bolmeye gec
+            self.etkin = self.bolmeler.index(hedef)
+        self._bolmeleri_boya()
+        self.yenile()
+        self.oturumu_kaydet()
+        self.durumu_tazele()
+
+    def _bk_nerede(self, e) -> tuple[int, int]:
+        """Fare olayinin (herhangi bir sutundan) uzerinde oldugu (sutun, satir)."""
+        x, y = e.x_root, e.y_root
+        c = 0
+        if self.bolundu():                      # ikinci sutunun sol kenarindan sagi: sag
+            c = 1 if x >= self._bk_sutunlar[1][1].winfo_rootx() - 4 else 0
+        liste = self._bk_liste(c)
+        return c, liste.nearest(y - liste.winfo_rooty())
+
+    def _belge_karti_bas(self, e, c: int) -> str:
+        if c != self._bk_sutun:
+            self._bk_sutun = c
+            self._belge_kartini_ciz(0)
+        i = self._bk_liste().nearest(e.y)
+        self._bk_tutulan = (c, i)
+        self._bk_tasindi = False
+        self._bk_sec(i)
         self.belge_karti.focus_set()
         return "break"
 
     def _belge_karti_surukle(self, e) -> str:
-        i = self._belge_karti_tutulan
-        if i is None:
+        if self._bk_tutulan is None:
             return "break"
-        j = self.belge_karti_liste.nearest(e.y)
-        if j != i:
-            self._belgeyi_tasi(i, j, kaydet=False)
-            self._belge_karti_tutulan = j
-            self._belge_karti_tasindi = True
+        c0, i = self._bk_tutulan
+        c, j = self._bk_nerede(e)
+        if c == c0:
+            self._bk_hedef_isareti(None)
+            if j != i and not self._bk_desen.get().strip():
+                self._bk_sirala(i, j, kaydet=False)
+                self._bk_tutulan = (c0, j)
+                self._bk_tasindi = True
+        else:                                   # oteki sutun: birakinca oraya
+            self._bk_hedef_isareti((c, j))
         return "break"
 
-    def _belge_karti_birak(self, _e) -> str:
-        if self._belge_karti_tasindi:
-            j = self._belge_karti_tutulan
+    def _bk_hedef_isareti(self, hedef: tuple[int, int] | None) -> None:
+        """Oteki sutuna suruklerken birakilacagi sutunun basligi vurgulanir."""
+        self._bk_birakilacak = hedef
+        for c, (bas, _) in enumerate(self._bk_sutunlar):
+            if c < len(self.bolmeler):
+                hedefte = hedef is not None and hedef[0] == c
+                bas.config(bg=self.ayar["panel-secili" if hedefte else "palet-zemin"])
+
+    def _belge_karti_birak(self, e) -> str:
+        tutulan, self._bk_tutulan = self._bk_tutulan, None
+        hedef = getattr(self, "_bk_birakilacak", None)
+        self._bk_hedef_isareti(None)
+        if tutulan is not None and hedef is not None and hedef[0] != tutulan[0]:
+            c, j = hedef
+            n = len(self._bk_gorunen[c])
+            # satirin alt yarisina birakildiysa onun altina
+            liste = self._bk_liste(c)
+            if n and j < n:
+                kutu = liste.bbox(j)
+                if kutu and e.y_root - liste.winfo_rooty() > kutu[1] + kutu[3] // 2:
+                    j += 1
+            self._bk_bolmeye_at(c, min(j, n))
+        elif self._bk_tasindi:
+            yol = self._bk_secili_yol()
             self.oturumu_kaydet()
-            self.bildir(self.m("belge_karti_tasindi", ad=os.path.basename(self.belgeler[j]),
-                               sira=j + 1), "vurgu")
-        self._belge_karti_tutulan = None
-        self._belge_karti_tasindi = False
+            if yol:
+                self.bildir(self.m("belge_karti_tasindi", ad=os.path.basename(yol),
+                                   sira=self.bolmeler[self._bk_sutun].belgeler.index(yol) + 1),
+                            "vurgu")
+        self._bk_tasindi = False
         return "break"
 
     def _belge_karti_git(self) -> None:
-        yol = self.belgeler[self._belge_karti_secili()]
+        yol = self._bk_secili_yol()
+        if yol is None:
+            return
+        hedef = self.bolmeler[self._bk_sutun]
         self._belge_kartini_kapat()
-        if not self._ayni_yol(yol, self.pdf_yolu):
+        if hedef is not self.bolme:
+            self._bolmeye_gec(hedef)
+        if not self._ayni_yol(yol, self.pdf_yolu or ""):
             self.belgeyi_ac(yol)
 
-    def _belge_karti_kapat_satir(self, i: int) -> None:
-        self.belgeyi_kapat(self.belgeler[i])    # bakilansa komsusu acilir
-        if not self.belgeler:
+    def _belge_karti_kapat_satir(self) -> None:
+        yol = self._bk_secili_yol()
+        if yol is None:
+            return
+        i = self._bk_secili()
+        with self._bolmede(self.bolmeler[self._bk_sutun]):
+            self.belgeyi_kapat(yol)             # bakilansa komsusu; son belgeyse bolme kapanir
+        if not any(b.belgeler for b in self.bolmeler):
             self._belge_kartini_kapat()
             return
-        self._belge_kartini_ciz(min(i, len(self.belgeler) - 1))
+        self._belge_kartini_ciz(i)
+        self._bk_yerlestir()
         self.belge_karti.focus_set()
 
     def _belge_kartini_kapat(self) -> None:
@@ -3938,14 +4236,15 @@ class Rubric(tk.Tk):
         self.belge_karti.place_forget()
         if self.mod == "belgeler":
             self.mod = "normal"
-        if self.focus_get() in (self.belge_karti, self.belge_karti_liste, None):
+        if self.focus_get() in (self.belge_karti, self.belge_karti_girdi, None):
             self.tuval.focus_set()
         self.durumu_tazele()
 
     def _belge_karti_odagi_yokla(self) -> None:
         """Odak karttan ciktiysa (disari tik, baska pencere) kapanir."""
-        if self._belge_karti_acik() and self.focus_get() not in (self.belge_karti,
-                                                                 self.belge_karti_liste):
+        if self._belge_karti_acik() and self.focus_get() not in (
+                self.belge_karti, self.belge_karti_girdi,
+                *(liste for _, liste in self._bk_sutunlar)):
             self._belge_kartini_kapat()
 
     def konumu_kaydet(self, diske: bool = True) -> None:
@@ -4027,9 +4326,14 @@ class Rubric(tk.Tk):
         y = kenar
         sayfa_olcusu = _sayfa_olcucusu(belge) if len(olcu) < n else None
 
-        for bas in range(0, n, sutunlar):
+        # Kitap duzeni (iki sutun): kapak tek basina, sagda; sonra 1-2, 3-4...
+        # (0 tabanli). Satir baslari ona gore kayar.
+        kitap = sutunlar == 2 and self.ayar["kitap-duzeni"] and n > 1
+        baslar = ([0] + list(range(1, n, 2))) if kitap else range(0, n, sutunlar)
+        for bas in baslar:
             pikseller = []
-            for no in range(bas, min(bas + sutunlar, n)):
+            son = 1 if kitap and bas == 0 else min(bas + sutunlar, n)
+            for no in range(bas, son):
                 r = olcu.get(no)
                 if r is None:
                     r = olcu[no] = sayfa_olcusu(no)
@@ -4038,6 +4342,10 @@ class Rubric(tk.Tk):
             top_w = sum(p[1] for p in pikseller) + ara * (len(pikseller) - 1)
             satir_h = max(p[2] for p in pikseller)
             x = max(kenar, (tw - top_w) / 2)
+            if kitap and bas == 0:              # kapak sag sayfanin yerinde
+                w0 = pikseller[0][1]
+                x = max(kenar, (tw - (2 * w0 + ara)) / 2) + w0 + ara
+                top_w = 2 * w0 + ara            # yatay kaydirma iki sayfalik genislige
 
             sayfalar = []
             for no, w, h in pikseller:
@@ -4083,7 +4391,11 @@ class Rubric(tk.Tk):
         self.ciz()
 
     def yatay_kaydir(self, piksel: float) -> None:
-        self.tuval.xview_scroll(int(piksel), "units")
+        """Piksel piksel, dikey kaydirmayla ayni adimla. Eskiden Tk birimiyle
+        (pencerenin onda biri) ziplardi."""
+        sinir = max(0, self.toplam_genislik - self.tuval.winfo_width())
+        x = max(0.0, min(sinir, self.tuval.canvasx(0) + piksel))
+        self.tuval.xview_moveto(x / max(1, self.toplam_genislik))
         self.ciz()
 
     def konum_imi(self) -> tuple[int, float]:
@@ -7106,8 +7418,8 @@ class Rubric(tk.Tk):
         return {
             "asagi":        lambda: self.kaydir(self.ayar["kaydirma-adimi"] * self.sayi()),
             "yukari":       lambda: self.kaydir(-self.ayar["kaydirma-adimi"] * self.sayi()),
-            "sola":         lambda: self.yatay_kaydir(-self.sayi()),
-            "saga":         lambda: self.yatay_kaydir(self.sayi()),
+            "sola":         lambda: self.yatay_kaydir(-self.sayi() * self.ayar["kaydirma-adimi"]),
+            "saga":         lambda: self.yatay_kaydir(self.sayi() * self.ayar["kaydirma-adimi"]),
             "yarim-asagi":  lambda: self.kaydir(self.gorunur_yukseklik() / 2),
             "yarim-yukari": lambda: self.kaydir(-self.gorunur_yukseklik() / 2),
             "sayfa-ileri":  lambda: self.kaydir(self.gorunur_yukseklik() * 0.92),
@@ -7124,6 +7436,7 @@ class Rubric(tk.Tk):
             "dondur":       self.dondur,
             "ters-renk":    self.ters_renk,
             "cift-sayfa":   self.cift_sayfa,
+            "kitap-duzeni": self.kitap_duzeni,
             "icindekiler":  self.icindekiler,
             "eylemler":     self.eylemler,
             "tam-ekran":    self.tam_ekran,
@@ -7148,6 +7461,7 @@ class Rubric(tk.Tk):
             "tex-modu":     self.tex_modu,
             "tex-derle":    self.tex_derle,
             "tex-kapat":    self.tex_kapat,
+            "tex-pdf-kaydet": self.tex_pdf_kaydet,
             "tex-sync":     self.tex_ileri_sync,
             "ara-ileri":    lambda: self.komut_modu("/"),
             "ara-geri":     lambda: self.komut_modu("?"),
@@ -7315,6 +7629,23 @@ class Rubric(tk.Tk):
         self.sutunlar = 1 if self.sutunlar > 1 else 2
         self.yenile()
         self.bildir(self.m("sutun_n", n=self.sutunlar), "vurgu")
+
+    def kitap_duzeni(self) -> None:
+        """D: kitap duzeni ac/kapa. Acilinca tek sayfadaysa cift sayfaya da gecer;
+        yalnizca iki sutunda anlami var. Kalici degil (d gibi); rubricrc:
+        `set kitap-duzeni true`."""
+        acik = not self.ayar["kitap-duzeni"]
+        self.ayar["kitap-duzeni"] = acik
+        if acik and self.sutunlar != 2:
+            self.sutunlar = 2
+        for b in self.bolmeler:
+            with self._bolmede(b):
+                if self.belge:
+                    yer = self.aktif_sayfa
+                    self.duzeni_hesapla()
+                    self.sayfaya_git(yer, zipla=False)
+        self.yenile()
+        self.bildir(self.m("kitap_durum", durum=self.m("acik" if acik else "kapali")), "vurgu")
 
     def tam_ekran(self) -> None:
         tam = not self.attributes("-fullscreen")
@@ -8740,6 +9071,39 @@ class Rubric(tk.Tk):
             shutil.rmtree(dizin, ignore_errors=True)
         return "break"
 
+    def tex_pdf_kaydet(self) -> None:
+        """Ctrl-K > tex-pdf-kaydet: onizlemeyi tex modunu kapatmadan PDF olarak
+        yazar (kaynagin yanina ya da secilen yere). Onizleme onbellekte kalir,
+        tex modu surer; Esc hicbir sey yazmaz."""
+        if not self.tex:
+            self.bildir(self.m("tex_kapali"), "uyari")
+            return
+        yol, onizleme = self.tex["yol"], self._tex_pdf_yolu()
+        if not os.path.exists(onizleme):
+            self.bildir(self.m("tex_pdf_yok"), "uyari")
+            return
+        yanina = os.path.splitext(yol)[0] + ".pdf"
+
+        def kaydet(hedef: str) -> None:
+            if hedef == "?":
+                hedef = filedialog.asksaveasfilename(
+                    title=self.m("tex_pdf_farkli"), initialdir=os.path.dirname(yol),
+                    initialfile=os.path.basename(yanina),
+                    defaultextension=".pdf", filetypes=[("PDF", "*.pdf")])
+                if not hedef:
+                    return
+            try:
+                shutil.copyfile(onizleme, hedef)
+            except OSError as e:
+                self.bildir(self.m("tex_pdf_kilitli", ad=os.path.basename(hedef), e=e), "hata")
+                return
+            self.bildir(self.m("tex_pdf_kaydedildi", ad=hedef), "vurgu")
+
+        self.secim_karti_ac(self.m("tex_pdf_soru"), [
+            ("s", self.m("tex_pdf_kaydet"), os.path.basename(yanina), lambda: kaydet(yanina)),
+            ("f", self.m("tex_pdf_farkli"), self.m("tex_pdf_farkli_aciklama"), lambda: kaydet("?")),
+        ])
+
     def _tex_pdf_sor(self, yol: str, onizleme: str, dizin: str) -> None:
         """Kapaninca: onizleme PDF olarak kaydedilsin mi? Esc / disari tik da
         "kaydetme" sayilir - onizleme zaten istenince yeniden derlenir."""
@@ -9105,7 +9469,8 @@ class Rubric(tk.Tk):
             return None
         if self.focus_get() is not None and self.focus_get() in (self.tex_metin, self.secim_karti,
                                                                  self.bulucu_girdi,
-                                                                 self.belge_karti):
+                                                                 self.belge_karti,
+                                                                 self.belge_karti_girdi):
             return None                           # tex editoru / secim karti kendi tuslarini alir
         # Tex modu acikken Ctrl-W odak PDF'teyken de editoru kaydedip kapatir
         # (kullanici istegi, 2026-09-25): yoksa PDF belgesini kapatiyordu.
@@ -9203,6 +9568,10 @@ class Rubric(tk.Tk):
 
     def tekerlek(self, olay) -> None:
         self.kaydir(-olay.delta / 120 * self.ayar["kaydirma-adimi"] * 2)
+
+    def yatay_tekerlek(self, olay) -> None:
+        """Shift + tekerlek (ve dokunmatik yuzeyin yatay kaydirmasi): yakinlasinca yana."""
+        self.yatay_kaydir(-olay.delta / 120 * self.ayar["kaydirma-adimi"] * 2)
 
     def ctrl_tekerlek(self, olay) -> None:
         # imlecin altindaki yer sabit kalir; delta 120 = bir tik
