@@ -1009,6 +1009,14 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "secim_karti_ipucu": "j/k move   enter pick   {tuslar}   esc cancel",
         "tex_acildi":       "tex: {ad} - ctrl-s compiles, ctrl-j shows it in the pdf, ctrl+click the pdf jumps back, esc to the pdf",
         "tex_kapandi":      "tex mode closed, {ad} saved",
+        "tex_pdf_soru":     "$ save the preview as PDF?",
+        "tex_pdf_kaydet":   "save",
+        "tex_pdf_farkli":   "save as",
+        "tex_pdf_farkli_aciklama": "pick where the PDF goes",
+        "tex_pdf_kaydetme": "don't save",
+        "tex_pdf_kaydetme_aciklama": "drop the preview (the .tex is saved)",
+        "tex_pdf_kaydedildi": "PDF saved: {ad}",
+        "tex_pdf_silindi":  "preview dropped, no PDF written",
         "tex_kapali":       "tex mode is off (T opens it)",
         "tex_motor_yok":    "{motor} not found - install MiKTeX / TeX Live or :set tex-motoru",
         "tex_derleniyor":   "[compiling]",
@@ -1277,6 +1285,14 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "secim_karti_ipucu": "j/k gez   enter seç   {tuslar}   esc vazgeç",
         "tex_acildi":       "tex: {ad} - ctrl-s derler, ctrl-j pdf'te gösterir, pdf'te ctrl+tık geri götürür, esc pdf'e",
         "tex_kapandi":      "tex modu kapandı, {ad} kaydedildi",
+        "tex_pdf_soru":     "$ önizleme PDF olarak kaydedilsin mi?",
+        "tex_pdf_kaydet":   "kaydet",
+        "tex_pdf_farkli":   "farklı kaydet",
+        "tex_pdf_farkli_aciklama": "PDF'in yerini seç",
+        "tex_pdf_kaydetme": "kaydetme",
+        "tex_pdf_kaydetme_aciklama": "önizlemeyi at (.tex kaydedildi)",
+        "tex_pdf_kaydedildi": "PDF kaydedildi: {ad}",
+        "tex_pdf_silindi":  "önizleme silindi, PDF yazılmadı",
         "tex_kapali":       "tex modu kapalı (T açar)",
         "tex_motor_yok":    "{motor} bulunamadı - MiKTeX / TeX Live kur ya da :set tex-motoru",
         "tex_derleniyor":   "[derleniyor]",
@@ -1546,6 +1562,14 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "secim_karti_ipucu": "j/k bewegen   Enter wählen   {tuslar}   Esc abbrechen",
         "tex_acildi":       "tex: {ad} - Strg-S kompiliert, Esc geht zum PDF, T zurück",
         "tex_kapandi":      "TeX-Modus geschlossen, {ad} gespeichert",
+        "tex_pdf_soru":     "$ Vorschau als PDF speichern?",
+        "tex_pdf_kaydet":   "speichern",
+        "tex_pdf_farkli":   "speichern unter",
+        "tex_pdf_farkli_aciklama": "Speicherort des PDF wählen",
+        "tex_pdf_kaydetme": "nicht speichern",
+        "tex_pdf_kaydetme_aciklama": "Vorschau verwerfen (.tex ist gespeichert)",
+        "tex_pdf_kaydedildi": "PDF gespeichert: {ad}",
+        "tex_pdf_silindi":  "Vorschau verworfen, kein PDF geschrieben",
         "tex_kapali":       "TeX-Modus ist aus (T öffnet ihn)",
         "tex_motor_yok":    "{motor} nicht gefunden - MiKTeX / TeX Live installieren oder :set tex-motoru",
         "tex_derleniyor":   "[kompiliert]",
@@ -2392,6 +2416,7 @@ class Rubric(tk.Tk):
         self.tex: dict | None = None
         self.tex_metin: tk.Text | None = None
         self.secim_karti: tk.Frame | None = None   # T / C'nin ortadaki karti
+        self._secim_karti_iptal = None     # secimsiz kapaninca cagrilir
         self._word: dict | None = None     # suren Word -> PDF cevirisi (bkz. word_ac)
         # otomatik yenileme: yol -> (mtime, boy) son bilinen; aday: bir kez
         # degismis goruldu, yazma bitsin diye bir tur daha bekleniyor
@@ -2475,6 +2500,9 @@ class Rubric(tk.Tk):
         if isinstance(acilacak, str):
             acilacak = [acilacak]
         _pymupdf_bekle()                # pencere bu arada cizildi (cerceveyi_uygula)
+        # onceki calismadan (cokme, eski surum) kalan tex onizlemeleri; tex modu
+        # henuz acik degil, hepsi gecici
+        shutil.rmtree(os.path.join(veri_dizini(), "tex"), ignore_errors=True)
         self.oturumu_yukle(acilacak or [])
         self._ipc_kur()
         if self.ayar["tepsi"]:
@@ -3465,11 +3493,24 @@ class Rubric(tk.Tk):
         # kapananlar da yazilir: q'dan hemen sonra Q'ya basan geri acabilsin.
         # `belgeler` / `aktif` bakilan bolmenindir: eski bicimi okuyan (ve
         # bolme bilmeyen) bir surum de makul bir oturum bulur.
+        # Tex onizlemesi (onbellekte, gecici) oturuma yazilmaz: tex modu da
+        # geri gelmiyor, cikista klasoru siliniyor.
+        onbellek = os.path.normcase(os.path.join(veri_dizini(), "tex")) + os.sep
+
+        def kalsin(y) -> bool:
+            return bool(y) and not os.path.normcase(os.path.abspath(y)).startswith(onbellek)
+
+        def liste(yollar) -> list:
+            return [y for y in (yollar or []) if kalsin(y)]
+
+        def aktif(yol, yollar) -> str:
+            return yol if kalsin(yol) else (liste(yollar) or [""])[0]
+
         self.kalici.veri["_oturum"] = {
-            "belgeler": list(self.belgeler),
-            "aktif": self.pdf_yolu,
-            "kapananlar": list(self.kapananlar),
-            "bolmeler": [{"belgeler": list(b.belgeler or []), "aktif": b.pdf_yolu or ""}
+            "belgeler": liste(self.belgeler),
+            "aktif": aktif(self.pdf_yolu, self.belgeler),
+            "kapananlar": [k for k in self.kapananlar if kalsin(k.get("yol"))],
+            "bolmeler": [{"belgeler": liste(b.belgeler), "aktif": aktif(b.pdf_yolu, b.belgeler)}
                          for b in self.bolmeler],
             "etkin": self.etkin,
         }
@@ -7955,7 +7996,8 @@ class Rubric(tk.Tk):
     # islev). j/k ya da oklar gezer, Enter / satirin tusu / tik secer, Esc ya
     # da disari tik kapatir.
 
-    def secim_karti_ac(self, baslik: str, satirlar: list[tuple]) -> None:
+    def secim_karti_ac(self, baslik: str, satirlar: list[tuple], iptal=None) -> None:
+        """`iptal`: kart secim yapilmadan kapanirsa (Esc, disari tik) cagrilir."""
         if self.mod == "palet":
             self.paleti_kapat()
         if self.secim_karti is None:
@@ -7963,6 +8005,7 @@ class Rubric(tk.Tk):
         for e in self.secim_karti_satirlar:
             e.destroy()
         self._secim_satirlari = list(satirlar)
+        self._secim_karti_iptal = iptal
         self.secim_karti_satirlar = []
         for i in range(len(satirlar)):
             e = tk.Label(self.secim_karti_govde, anchor="w", bd=0, padx=22, pady=14,
@@ -8051,8 +8094,12 @@ class Rubric(tk.Tk):
             self.secim_karti.place_forget()
             if self.focus_get() in (self.secim_karti, None):
                 self.tuval.focus_set()
+            iptal, self._secim_karti_iptal = self._secim_karti_iptal, None
+            if iptal:
+                iptal()
 
     def _secim_karti_sec(self, i: int) -> None:
+        self._secim_karti_iptal = None
         self._secim_kartini_kapat()
         self._secim_satirlari[i][3]()
 
@@ -8155,6 +8202,7 @@ class Rubric(tk.Tk):
         m.bind("<Control-s>", self.tex_derle)
         m.bind("<Control-S>", self.tex_derle)
         m.bind("<Control-w>", self.tex_kapat)
+        m.bind("<Control-W>", self.tex_kapat)          # Caps Lock acikken
         m.bind("<Control-j>", self.tex_ileri_sync)
         m.bind("<Escape>", lambda e: (self.tuval.focus_set(), "break")[1])
         m.bind("<Tab>", lambda e: (m.insert("insert", "  "), "break")[1])
@@ -8276,7 +8324,10 @@ class Rubric(tk.Tk):
         m.tag_raise("tex_yorum")
 
     def _tex_pdf_yolu(self) -> str:
-        return os.path.splitext(self.tex["yol"])[0] + ".pdf"
+        # Onizleme kaynagin yanina yazilmaz (kullanici istegi, 2026-09-25: her
+        # .tex'in yaninda PDF birikmesin); onbellekte durur, kapatinca sorulur.
+        ad = os.path.splitext(os.path.basename(self.tex["yol"]))[0]
+        return os.path.join(self._tex_dizini(), "onizleme", ad + ".pdf")
 
     def _tex_dizini(self) -> str:
         """Kaynaga ozel derleme dizini; ayni adli iki .tex karismasin diye yolun ozeti."""
@@ -8420,6 +8471,7 @@ class Rubric(tk.Tk):
                     self.belge = None
         hata = None
         try:
+            os.makedirs(os.path.dirname(hedef), exist_ok=True)
             shutil.copyfile(uretilen, hedef)
         except OSError as e:
             hata = e
@@ -8462,13 +8514,71 @@ class Rubric(tk.Tk):
             self.bildir(self.m("tex_kapali"), "uyari")
             return "break"
         self._tex_durdur()
-        ad = os.path.basename(self.tex["yol"])
+        yol = self.tex["yol"]
+        onizleme, dizin = self._tex_pdf_yolu(), self._tex_dizini()
         self.tex = None
         self._bolmeleri_yerlestir()
         self.yenile()
         self.tuval.focus_set()
-        self.bildir(self.m("tex_kapandi", ad=ad), "vurgu")
+        self.bildir(self.m("tex_kapandi", ad=os.path.basename(yol)), "vurgu")
+        if os.path.exists(onizleme):
+            self._tex_pdf_sor(yol, onizleme, dizin)
+        else:
+            shutil.rmtree(dizin, ignore_errors=True)
         return "break"
+
+    def _tex_pdf_sor(self, yol: str, onizleme: str, dizin: str) -> None:
+        """Kapaninca: onizleme PDF olarak kaydedilsin mi? Esc / disari tik da
+        "kaydetme" sayilir - onizleme zaten istenince yeniden derlenir."""
+        yanina = os.path.splitext(yol)[0] + ".pdf"
+        bitir = lambda hedef: self._tex_onizlemeyi_bitir(yol, onizleme, dizin, hedef)
+        self.secim_karti_ac(self.m("tex_pdf_soru"), [
+            ("s", self.m("tex_pdf_kaydet"), os.path.basename(yanina), lambda: bitir(yanina)),
+            ("f", self.m("tex_pdf_farkli"), self.m("tex_pdf_farkli_aciklama"), lambda: bitir("?")),
+            ("n", self.m("tex_pdf_kaydetme"), self.m("tex_pdf_kaydetme_aciklama"), lambda: bitir(None)),
+        ], iptal=lambda: bitir(None))
+
+    def _tex_onizlemeyi_bitir(self, yol: str, onizleme: str, dizin: str,
+                              hedef: str | None) -> None:
+        """Onizlemeyi `hedef`e kopyalar (None: kaydetmez); onu gosteren bolmeler
+        kaydedilene gecer ya da onu kapatir, onbellek klasoru silinir."""
+        if hedef == "?":
+            hedef = filedialog.asksaveasfilename(
+                title=self.m("tex_pdf_farkli"), initialdir=os.path.dirname(yol),
+                initialfile=os.path.splitext(os.path.basename(yol))[0] + ".pdf",
+                defaultextension=".pdf", filetypes=[("PDF", "*.pdf")])
+            if not hedef:                   # vazgecti: soru yeniden
+                self._tex_pdf_sor(yol, onizleme, dizin)
+                return
+        if hedef:
+            try:
+                shutil.copyfile(onizleme, hedef)
+            except OSError as e:
+                self.bildir(self.m("tex_pdf_kilitli", ad=os.path.basename(hedef), e=e), "hata")
+                self._tex_pdf_sor(yol, onizleme, dizin)
+                return
+        for b in self.bolmeler:
+            with self._bolmede(b):
+                if not any(self._ayni_yol(y, onizleme) for y in self.belgeler):
+                    continue
+                if hedef:
+                    bakilan = self.belge is not None and self._ayni_yol(self.pdf_yolu, onizleme)
+                    yer, zoom, sigdir = (self.ofset(), self.zoom, self.sigdir) if bakilan else (0, 0, 0)
+                    self.belgeler[:] = [hedef if self._ayni_yol(y, onizleme) else y
+                                        for y in self.belgeler]
+                    if bakilan:
+                        self.belgeyi_ac(hedef)
+                        if self.belge is not None:
+                            self.zoom, self.sigdir = zoom, sigdir
+                            self.duzeni_hesapla()
+                            self.ofset_ata(yer, ciz=True)
+                else:
+                    self.belgeyi_kapat(onizleme)
+        self.kapananlar = [k for k in self.kapananlar if not self._ayni_yol(k["yol"], onizleme)]
+        shutil.rmtree(dizin, ignore_errors=True)
+        self.oturumu_kaydet()
+        self.bildir(self.m("tex_pdf_kaydedildi", ad=hedef) if hedef
+                    else self.m("tex_pdf_silindi"), "vurgu")
 
     # -- yer imleri (M koy, b liste) ---------------------------------------
     #
@@ -8783,6 +8893,10 @@ class Rubric(tk.Tk):
         if self.focus_get() is not None and self.focus_get() in (self.tex_metin, self.secim_karti,
                                                                  self.bulucu_girdi):
             return None                           # tex editoru / secim karti kendi tuslarini alir
+        # Tex modu acikken Ctrl-W odak PDF'teyken de editoru kaydedip kapatir
+        # (kullanici istegi, 2026-09-25): yoksa PDF belgesini kapatiyordu.
+        if self.tex and olay.state & 0x4 and olay.keysym.lower() == "w":
+            return self.tex_kapat()
         ad = self.tus_adini_coz(olay)
         if not ad:
             return None
@@ -9057,6 +9171,8 @@ class Rubric(tk.Tk):
             self._izle_isi = None
         if self.tex:                            # tex: yazilan kaydedilsin, latex dursun
             self._tex_durdur()
+        # tex onizlemeleri gecici: sorulmadan kalanlar da (Esc, cokme) birikmesin
+        shutil.rmtree(os.path.join(veri_dizini(), "tex"), ignore_errors=True)
         if self._baski is not None:             # suren yazdirma: is parcacigi belgeyi iptal etsin
             self._baski["durdur"].set()
             if self._baski["belge"] is not None:

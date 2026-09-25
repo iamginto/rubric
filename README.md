@@ -51,7 +51,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `S` | page organizer: move, delete, rotate, extract pages |
 | `X` | redact pen: drag a box or click a word, `Enter` writes the copy |
 | `<C-c>` | copy the shift+dragged text |
-| `T` | tex mode: new or open a `.tex`, live PDF beside it (`<C-s>` compile, `<C-j>` / ctrl+click SyncTeX jump, `<Esc>` to the PDF, `<C-w>` close) |
+| `T` | tex mode: new or open a `.tex`, live PDF beside it (`<C-s>` compile, `<C-j>` / ctrl+click SyncTeX jump, `<Esc>` to the PDF, `<C-w>` save + close, asks before writing the PDF) |
 | `C` | convert: PDF, plain text or PNG pages (EPUB, MOBI, Word...) |
 | `U` `<C-z>` | bring back the last deleted thing |
 | `m<x>` `'<x>` | set / jump to mark |
