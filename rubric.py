@@ -2426,6 +2426,9 @@ class Rubric(tk.Tk):
         # arayuz kurulduktan sonra zoomed'a gecilir.
         self._normal_konum: tuple[int, int, int, int] | None = None
         self._acilis_buyuk: bool = False
+        # Tepsiye inerken buyutulmus muydu: deiconify() zoomed'i unutup
+        # normal boyda acar, donuste state("zoomed") ile geri getirilir.
+        self._tepsi_buyuk: bool = False
 
         # --- kip / girdi durumu ---
         self.mod: str = "normal"           # normal | komut | arama | icindekiler
@@ -2508,7 +2511,11 @@ class Rubric(tk.Tk):
         """Simge durumundaysa aç, one getir. Dosya hangi pencereye gittiyse
         kullanici onu gorsun diye."""
         try:
-            if self.state() in ("iconic", "withdrawn"):     # withdrawn: tepsiden
+            durum = self.state()
+            if durum == "withdrawn" and self._tepsi_buyuk:  # tepsiden, buyutulmus
+                self.state("zoomed")
+                self.ust_dugmeler["buyut"].config(text="[=]")
+            elif durum in ("iconic", "withdrawn"):          # withdrawn: tepsiden
                 self.deiconify()
             self.lift()
             self.focus_force()
@@ -2589,6 +2596,7 @@ class Rubric(tk.Tk):
                 self._bekleyen_zoomu_birak()
                 self.konumu_kaydet()
         self.oturumu_kaydet()
+        self._tepsi_buyuk = self.state() == "zoomed"
         self.withdraw()
 
     def tamamen_cik(self) -> None:
@@ -3406,7 +3414,8 @@ class Rubric(tk.Tk):
             return {}
         en, boy, x, y = self._normal_konum
         try:
-            buyuk = self.state() == "zoomed"
+            durum = self.state()
+            buyuk = durum == "zoomed" or (durum == "withdrawn" and self._tepsi_buyuk)
         except tk.TclError:
             buyuk = False
         return {"en": en, "boy": boy, "x": x, "y": y, "buyuk": buyuk}
