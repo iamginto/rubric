@@ -80,6 +80,9 @@ set onbellek             12       # bellekte tutulan islenmis sayfa sayisi
 # kadar ms isaretli kalir (ayni sayfaya donen baglantida bir sey oldugu
 # belli olsun diye). 0 yazarsan isaretleme olmaz, gidis yine dogru olur.
 set capa-suresi          1400
+# Ic baglantinin (ref, cite, dipnot) ustunde bu kadar ms durunca hedefin
+# cevresi kucuk bir pencerede gorunur. 0 yazarsan hic gosterilmez.
+set baglanti-onizleme    400
 # Bolunmus gorunumde (Alt+Right / Alt+Left) imlecin uzerinde durdugu bolme
 # etkin olur: sag belgenin tablosuna gidip j'ye basan sagi kaydirir.
 # false yaparsan bolme yalnizca tikla ve Alt+w ile degisir - tekerlek yine

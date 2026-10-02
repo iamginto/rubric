@@ -414,6 +414,9 @@ VARSAYILAN_AYAR = {
     # yer bu kadar ms isaretli kalir; ayni sayfaya donen baglantida "hicbir sey
     # olmadi" sanilmasin diye. 0 = hic isaretleme.
     "capa-suresi":    1400,
+    # Ic baglantinin (ref, cite, dipnot) ustunde bu kadar ms durunca hedefin
+    # cevresi kucuk bir pencerede gorunur. 0 = hic gosterme.
+    "baglanti-onizleme": 400,
     # Bolunmus gorunumde imlecin durdugu bolme etkin olur ("taban"): sag
     # belgenin uzerine gidip j'ye basan sagi kaydirir. false: bolme yalnizca
     # tikla ve <A-w> ile degisir.
@@ -622,6 +625,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgular":       "highlight list - Enter go, x delete",
         "vurgu-geri-al":  "undo the last highlight add / delete",
         "vurgulari-aktar": "embed highlights and notes as PDF comments (<name>-highlighted.pdf, original untouched)",
+        "vurgulari-md":   "highlights and notes as Markdown, grouped by section (<name>-notes.md)",
         "not-ekle":       "note at the cursor: hover to read it, i to edit, empty text deletes",
         "geri-getir":     "bring back the last thing you deleted (note or highlight)",
         "silme-kipi":     "delete mode: click a note or highlight to remove it, Esc leaves",
@@ -630,6 +634,9 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "karartma-kalemi": "redact pen: drag a box or click a word, Enter writes the redacted copy",
         "karartmayi-uygula": "write the redacted copy now (<name>-redacted.pdf, text really removed)",
         "ustveri-temizle": "strip metadata: author, software, dates, XMP (<name>-clean.pdf)",
+        "sikistir":       "compress: downsample images, subset fonts (<name>-small.pdf; :compress 100 sets the dpi)",
+        "sifrele":        "encrypt with a password, AES-256 (<name>-encrypted.pdf)",
+        "sifre-kaldir":   "remove the password / restrictions (<name>-decrypted.pdf)",
         "kopyala":        "copy the selected text (shift+drag) to the clipboard",
         "tex-modu":       "tex mode: .tex source beside its live PDF (again: focus the editor)",
         "tex-derle":      "save and compile the .tex now",
@@ -710,6 +717,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgular":       "vurgu listesi - Enter git, x sil",
         "vurgu-geri-al":  "son vurgu ekleme / silmesini geri al",
         "vurgulari-aktar": "vurgu ve notları PDF yorumu olarak göm (<ad>-vurgulu.pdf, aslı değişmez)",
+        "vurgulari-md":   "vurgu ve notları Markdown olarak yaz, bölümlere göre (<ad>-notlar.md)",
         "not-ekle":       "imlecin oldugu yere not: üstüne gelince okunur, i düzenler, boş metin siler",
         "geri-getir":     "en son sildiğin şeyi geri getir (not ya da vurgu)",
         "silme-kipi":     "silme kipi: tıkladığın notu ya da vurguyu siler, Esc çıkar",
@@ -718,6 +726,9 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "karartma-kalemi": "karartma kalemi: kutu sürükle ya da kelimeye tıkla, Enter karartılmış kopyayı yazar",
         "karartmayi-uygula": "karartılmış kopyayı şimdi yaz (<ad>-karartilmis.pdf, metin gerçekten silinir)",
         "ustveri-temizle": "üstverileri sil: yazar, program, tarihler, XMP (<ad>-temiz.pdf)",
+        "sikistir":       "sıkıştır: görselleri küçült, yazı tiplerini kırp (<ad>-kucuk.pdf; :sıkıştır 100 dpi verir)",
+        "sifrele":        "parolayla şifrele, AES-256 (<ad>-sifreli.pdf)",
+        "sifre-kaldir":   "parolayı / kısıtlamaları kaldır (<ad>-sifresiz.pdf)",
         "kopyala":        "seçili metni (shift+sürükle) panoya kopyala",
         "tex-modu":       "tex modu: .tex kaynağı yanında canlı PDF (yine basınca: editöre geç)",
         "tex-derle":      ".tex'i kaydet ve şimdi derle",
@@ -798,6 +809,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "vurgular":       "Markierungsliste - Enter springen, x löschen",
         "vurgu-geri-al":  "letztes Markieren / Löschen rückgängig machen",
         "vurgulari-aktar": "Markierungen und Notizen als PDF-Kommentare einbetten (<Name>-markiert.pdf, Original bleibt)",
+        "vurgulari-md":   "Markierungen und Notizen als Markdown, nach Abschnitten (<Name>-notizen.md)",
         "not-ekle":       "Notiz an der Zeigerposition: zum Lesen darauf zeigen, i bearbeitet, leer löscht",
         "geri-getir":     "zuletzt Gelöschtes zurückholen (Notiz oder Markierung)",
         "silme-kipi":     "Löschmodus: Klick entfernt Notiz oder Markierung, Esc beendet",
@@ -806,6 +818,9 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "karartma-kalemi": "Schwärzstift: Rahmen ziehen oder Wort klicken, Enter schreibt die geschwärzte Kopie",
         "karartmayi-uygula": "geschwärzte Kopie jetzt schreiben (<Name>-geschwaerzt.pdf, Text wirklich entfernt)",
         "ustveri-temizle": "Metadaten entfernen: Autor, Programm, Daten, XMP (<Name>-bereinigt.pdf)",
+        "sikistir":       "komprimieren: Bilder verkleinern, Schriften reduzieren (<Name>-klein.pdf; :komprimieren 100 setzt die dpi)",
+        "sifrele":        "mit Passwort verschlüsseln, AES-256 (<Name>-verschluesselt.pdf)",
+        "sifre-kaldir":   "Passwort / Einschränkungen entfernen (<Name>-entschluesselt.pdf)",
         "kopyala":        "markierten Text (Shift+Ziehen) in die Zwischenablage kopieren",
         "tex-modu":       "TeX-Modus: .tex-Quelltext neben dem Live-PDF (nochmal: zum Editor)",
         "tex-derle":      ".tex speichern und jetzt kompilieren",
@@ -860,12 +875,13 @@ KOMUT_GRUPLARI = [
     ("isaret ve ziplama", ["isaret-koy", "isarete-git", "yer-imi-koy", "yer-imleri",
                            "geri-zipla", "ileri-zipla"]),
     ("vurgu", ["vurgu-kalemi", "vurgular", "vurgu-geri-al", "vurgulari-aktar",
-               "not-ekle", "geri-getir", "silme-kipi", "kopyala"]),
+               "vurgulari-md", "not-ekle", "geri-getir", "silme-kipi", "kopyala"]),
     ("dosya", ["ac", "belgeler", "sonraki-belge", "onceki-belge", "belgeyi-kapat",
                "kapanani-ac", "yeniden-yukle", "donustur", "yazdir", "yazdir-sec", "komut-modu",
                "cik"]),
     ("pdf araclari", ["sayfa-duzeni", "birlestir", "karartma-kalemi",
-                      "karartmayi-uygula", "ustveri-temizle"]),
+                      "karartmayi-uygula", "ustveri-temizle", "sikistir",
+                      "sifrele", "sifre-kaldir"]),
     ("tex", ["tex-modu", "tex-derle", "tex-sync", "tex-pdf-kaydet", "tex-kapat"]),
     ("bolmeler", ["bolme-saga", "bolme-sola", "bolme-gec", "bolme-tek"]),
     ("ayarlar", ["belge-siniri", "geri-acma-siniri", "yazici", "tepsi"]),
@@ -1103,6 +1119,24 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "temiz_ek":         "clean",
         "ustveri_yok":      "no metadata found - nothing written",
         "ustveri_silindi":  "removed: {alanlar} -> {ad}",
+        "md_ek":            "notes",
+        "md_sayfa":         "p. {n}",
+        "md_not":           "note",
+        "kucuk_ek":         "small",
+        "sikistirildi":     "{once} -> {sonra} (-{yuzde}%) -> {ad}",
+        "sikismadi":        "already compact: the copy was not smaller ({boyut}) - nothing written",
+        "sikistir_kullanim": ":compress [dpi]  (36-600, default 150)",
+        "sifreli_ek":       "encrypted",
+        "sifresiz_ek":      "decrypted",
+        "parola_iste":      "{ad} is password protected - password:",
+        "parola_yanlis":    "{ad}: wrong password - try again:",
+        "parola_yeni":      "new password (shown as *):",
+        "parola_tekrar":    "the same password again:",
+        "parola_uyusmadi":  "passwords do not match - nothing written",
+        "parola_bos":       "empty password - nothing written",
+        "sifrelendi":       "encrypted (AES-256) -> {ad}",
+        "sifre_yok":        "this PDF has no password or restrictions - nothing written",
+        "sifre_kaldirildi": "password removed -> {ad}",
         "alan_title":       "title",
         "alan_author":      "author",
         "alan_subject":     "subject",
@@ -1389,6 +1423,24 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "temiz_ek":         "temiz",
         "ustveri_yok":      "üstveri bulunamadı - bir şey yazılmadı",
         "ustveri_silindi":  "silindi: {alanlar} -> {ad}",
+        "md_ek":            "notlar",
+        "md_sayfa":         "s. {n}",
+        "md_not":           "not",
+        "kucuk_ek":         "kucuk",
+        "sikistirildi":     "{once} -> {sonra} (-%{yuzde}) -> {ad}",
+        "sikismadi":        "zaten sıkı: kopya küçülmedi ({boyut}) - bir şey yazılmadı",
+        "sikistir_kullanim": ":sıkıştır [dpi]  (36-600, varsayılan 150)",
+        "sifreli_ek":       "sifreli",
+        "sifresiz_ek":      "sifresiz",
+        "parola_iste":      "{ad} parola korumalı - parola:",
+        "parola_yanlis":    "{ad}: parola yanlış - tekrar:",
+        "parola_yeni":      "yeni parola (* görünür):",
+        "parola_tekrar":    "aynı parola tekrar:",
+        "parola_uyusmadi":  "parolalar uyuşmadı - bir şey yazılmadı",
+        "parola_bos":       "parola boş - bir şey yazılmadı",
+        "sifrelendi":       "şifrelendi (AES-256) -> {ad}",
+        "sifre_yok":        "bu PDF'te parola ya da kısıtlama yok - bir şey yazılmadı",
+        "sifre_kaldirildi": "parola kaldırıldı -> {ad}",
         "alan_title":       "başlık",
         "alan_author":      "yazar",
         "alan_subject":     "konu",
@@ -1674,6 +1726,24 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "temiz_ek":         "bereinigt",
         "ustveri_yok":      "keine Metadaten gefunden - nichts geschrieben",
         "ustveri_silindi":  "entfernt: {alanlar} -> {ad}",
+        "md_ek":            "notizen",
+        "md_sayfa":         "S. {n}",
+        "md_not":           "Notiz",
+        "kucuk_ek":         "klein",
+        "sikistirildi":     "{once} -> {sonra} (-{yuzde} %) -> {ad}",
+        "sikismadi":        "bereits kompakt: die Kopie war nicht kleiner ({boyut}) - nichts geschrieben",
+        "sikistir_kullanim": ":komprimieren [dpi]  (36-600, Standard 150)",
+        "sifreli_ek":       "verschluesselt",
+        "sifresiz_ek":      "entschluesselt",
+        "parola_iste":      "{ad} ist passwortgeschützt - Passwort:",
+        "parola_yanlis":    "{ad}: falsches Passwort - nochmal:",
+        "parola_yeni":      "neues Passwort (als * angezeigt):",
+        "parola_tekrar":    "dasselbe Passwort nochmal:",
+        "parola_uyusmadi":  "Passwörter stimmen nicht überein - nichts geschrieben",
+        "parola_bos":       "leeres Passwort - nichts geschrieben",
+        "sifrelendi":       "verschlüsselt (AES-256) -> {ad}",
+        "sifre_yok":        "dieses PDF hat kein Passwort und keine Einschränkungen - nichts geschrieben",
+        "sifre_kaldirildi": "Passwort entfernt -> {ad}",
         "alan_title":       "Titel",
         "alan_author":      "Autor",
         "alan_subject":     "Thema",
@@ -1793,6 +1863,14 @@ _KATLAMA = str.maketrans({
 })
 
 
+def boyut_metni(bayt: int) -> str:
+    if bayt < 1024:
+        return f"{bayt} B"
+    if bayt < 1024 * 1024:
+        return f"{bayt / 1024:.0f} KB"
+    return f"{bayt / 1024 / 1024:.1f} MB"
+
+
 def katla(metin: str) -> str:
     return metin.translate(_KATLAMA).lower()
 
@@ -1828,6 +1906,8 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sayfa-duzeni": "organize-pages", "birlestir": "merge",
         "karartma-kalemi": "redact-pen", "karartmayi-uygula": "apply-redaction",
         "ustveri-temizle": "strip-metadata",
+        "vurgulari-md": "highlights-md", "sikistir": "compress",
+        "sifrele": "encrypt", "sifre-kaldir": "decrypt",
         "kopyala": "copy", "tex-modu": "tex", "tex-derle": "tex-compile",
         "tex-kapat": "tex-close", "tex-pdf-kaydet": "tex-save-pdf",
         "tex-sync": "tex-sync",
@@ -1871,6 +1951,8 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sayfa-duzeni": "sayfa-düzeni", "birlestir": "birleştir",
         "karartma-kalemi": "karartma-kalemi", "karartmayi-uygula": "karartmayı-uygula",
         "ustveri-temizle": "üstveri-temizle",
+        "vurgulari-md": "vurguları-md", "sikistir": "sıkıştır",
+        "sifrele": "şifrele", "sifre-kaldir": "şifre-kaldır",
         "kopyala": "kopyala", "tex-modu": "tex-modu", "tex-derle": "tex-derle",
         "tex-kapat": "tex-kapat", "tex-pdf-kaydet": "tex-pdf-kaydet",
         "tex-sync": "tex-eşle",
@@ -1916,6 +1998,8 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "sayfa-duzeni": "seiten-ordnen", "birlestir": "zusammenfügen",
         "karartma-kalemi": "schwärzstift", "karartmayi-uygula": "schwärzung-anwenden",
         "ustveri-temizle": "metadaten-entfernen",
+        "vurgulari-md": "markierungen-md", "sikistir": "komprimieren",
+        "sifrele": "verschlüsseln", "sifre-kaldir": "entschlüsseln",
         "kopyala": "kopieren", "tex-modu": "tex-modus", "tex-derle": "tex-kompilieren",
         "tex-kapat": "tex-schließen", "tex-pdf-kaydet": "tex-pdf-speichern",
         "tex-sync": "tex-sync",
@@ -2427,7 +2511,7 @@ BOLME_ALANLARI = (
     # baglantilar
     "baglantilar_acik", "_baglantilar", "_baglanti_cizili", "_imlecteki_baglanti",
     "_baglanti_adayi", "_basis_noktasi", "_surukleniyor", "_satir_metinleri",
-    "_capa", "_capa_isi",
+    "_capa", "_capa_isi", "_onizleme",
     # icindekiler
     "_icindekiler_hatira",
 )
@@ -2483,6 +2567,9 @@ class Rubric(tk.Tk):
         self._izlenen: dict[str, tuple] = {}
         self._izleme_aday: dict[str, tuple] = {}
         self._izle_isi = None
+        # parolali belgeler: yol -> bu oturumda girilen parola. Diske yazilmaz.
+        self._parolalar: dict[str, str] = {}
+        self._parola_devam = None          # parola satiri onaylaninca cagrilir
         # dosya bulucu (o)
         self.bulucu: tk.Frame | None = None
         self.belge_karti: tk.Frame | None = None   # B'nin ortadaki karti
@@ -3019,6 +3106,25 @@ class Rubric(tk.Tk):
                 return pymupdf.open(stream=f.read(), filetype=uzanti)
         return pymupdf.open(yol)
 
+    def _parola_coz(self, belge, yol: str, word: bool) -> bool:
+        """Parolali belge: bu oturumda girilen parola biliniyorsa onunla acilir;
+        yoksa sorulur, girilince belge bastan acilir (yanlissa yine sorulur)."""
+        anahtar = os.path.normcase(yol)
+        eski = self._parolalar.get(anahtar)
+        if eski and belge.authenticate(eski):
+            return True
+        belge.close()
+        self._parolalar.pop(anahtar, None)
+
+        def devam(parola: str) -> None:
+            if parola:
+                self._parolalar[anahtar] = parola
+                self.belgeyi_ac(yol, word)
+
+        self.parola_sor(self.m("parola_yanlis" if eski else "parola_iste",
+                               ad=os.path.basename(yol)), devam)
+        return False
+
     def belgeyi_ac(self, yol: str, word: bool = True) -> None:
         yol = os.path.abspath(os.path.expanduser(yol.strip().strip('"')))
         if yol.lower().endswith(".tex"):          # kaynak: yaninda PDF'iyle tex modu
@@ -3034,6 +3140,8 @@ class Rubric(tk.Tk):
             yeni = self._belge_oku(yol)
         except Exception as e:
             self.bildir(self.m("acilamadi", e=e), "hata")
+            return
+        if yeni.needs_pass and not self._parola_coz(yeni, yol, word):
             return
 
         if self.mod == "sayfa-duzeni":     # kucuk resimler eski belgeye bakiyor
@@ -3203,6 +3311,7 @@ class Rubric(tk.Tk):
             # "su sayfa" diyen baglantinin capasi (bkz. baglanti_capasi)
             self._satir_metinleri = {}
             self._capa = None
+            self._onizleme = None       # baglanti onizlemesi: {"is"} bekliyor, {"resim"} acik
             self._capa_isi = None
 
             self._icindekiler_hatira = None
@@ -4455,18 +4564,7 @@ class Rubric(tk.Tk):
             self.onbellek.move_to_end(anahtar)
             return self.onbellek[anahtar]
         try:
-            if gece:
-                # gri tonla, sonra siyah -> yazi rengi, beyaz -> zemin (R=G=B
-                # oldugu icin tint_with'in kanal kanal eslemesi tam bir gecis)
-                gri = self.belge[no].get_pixmap(matrix=self.sayfa_matrisi(),
-                                                colorspace=pymupdf.csGRAY, alpha=False)
-                pix = pymupdf.Pixmap(pymupdf.csRGB, gri)
-                pix.tint_with(*gece)
-            else:
-                pix = self.belge[no].get_pixmap(matrix=self.sayfa_matrisi(), alpha=False)
-            if self.ters and not gece:
-                pix.invert_irect(pix.irect)
-            resim = tk.PhotoImage(master=self, data=pix.tobytes("ppm"))
+            resim = self._boyali_resim(no, self.sayfa_matrisi())
         except Exception as e:
             self.bildir(self.m("islenemedi", no=no + 1, e=e), "hata")
             return None
@@ -4474,6 +4572,23 @@ class Rubric(tk.Tk):
         while len(self.onbellek) > max(2, int(self.ayar["onbellek"])):
             self.onbellek.popitem(last=False)
         return resim
+
+    def _boyali_resim(self, no: int, m: pymupdf.Matrix,
+                      kirp: pymupdf.Rect | None = None) -> tk.PhotoImage:
+        """Sayfanin (ya da `kirp` parcasinin) gece moduna gore boyanmis resmi."""
+        gece = self._gece_renkleri() if self.ters else None
+        if gece:
+            # gri tonla, sonra siyah -> yazi rengi, beyaz -> zemin (R=G=B
+            # oldugu icin tint_with'in kanal kanal eslemesi tam bir gecis)
+            gri = self.belge[no].get_pixmap(matrix=m, clip=kirp,
+                                            colorspace=pymupdf.csGRAY, alpha=False)
+            pix = pymupdf.Pixmap(pymupdf.csRGB, gri)
+            pix.tint_with(*gece)
+        else:
+            pix = self.belge[no].get_pixmap(matrix=m, clip=kirp, alpha=False)
+        if self.ters and not gece:
+            pix.invert_irect(pix.irect)
+        return tk.PhotoImage(master=self, data=pix.tobytes("ppm"))
 
     def ciz(self, pay: int | None = None) -> None:
         """Yalnizca goruntuye giren sayfalari isler; gerisini tuvalden dusurur.
@@ -4524,9 +4639,13 @@ class Rubric(tk.Tk):
             self._bekleyeni_ciz()
         if self._capa:
             self._capayi_ciz()
+        if self._onizleme and self._onizleme["ofset"] != ust:
+            self._onizlemeyi_kapat()
+            self._imlecteki_baglanti = None     # ayni baglantiya donunce yeniden acilsin
         self.durumu_tazele()
 
     def _tuvali_temizle(self) -> None:
+        self._onizlemeyi_kapat()            # yeniden cizimde bayat kalmasin
         self.tuval.delete("all")
         self.tuval_ogeleri.clear()
 
@@ -4733,6 +4852,9 @@ class Rubric(tk.Tk):
         if kimlik == self._imlecteki_baglanti:
             return
         self._imlecteki_baglanti = kimlik
+        self._onizlemeyi_kapat()
+        if bulgu:
+            self._onizleme_planla(*bulgu)
         self.tuval.config(cursor="hand2" if bulgu else "")
         if bulgu:
             self._baglanti_iletisi = self.baglanti_ozeti(bulgu[1]) or self.m("baglanti_bilinmez")
@@ -4740,6 +4862,104 @@ class Rubric(tk.Tk):
         elif self.gecici_ileti and self.gecici_ileti == self._baglanti_iletisi:
             self._baglanti_iletisi = ""
             self.bildir("")
+
+    # -- baglanti onizlemesi --------------------------------------------------
+    #
+    # Ic baglantinin (ref, cite, dipnot) ustunde `baglanti-onizleme` ms durunca
+    # hedefin cevresi kucuk bir pencerede gorunur: kaynakcaya ziplayip <C-o>
+    # ile donmeye gerek kalmaz. Not balonu gibi tuvale cizilir; imlec
+    # baglantidan cikinca, tiklayinca, sayfa kayinca kalkar. Hedef tiklamadaki
+    # gibi cozulur: `to`, yoksa capa (bkz. baglanti_capasi), o da yoksa tepe.
+
+    def _onizleme_planla(self, yer: dict, b: dict) -> None:
+        gecikme = int(self.ayar["baglanti-onizleme"] or 0)
+        if gecikme <= 0 or b.get("kind") not in (pymupdf.LINK_GOTO, pymupdf.LINK_NAMED):
+            return
+        bolme, belge, kimlik = self.bolme, self.belge, b.get("id")
+
+        def goster() -> None:
+            if bolme not in self.bolmeler:
+                return
+            with self._bolmede(bolme):
+                self._onizleme = None
+                if self.belge is belge and self._imlecteki_baglanti == kimlik \
+                        and self.mod == "normal":
+                    self.onizlemeyi_goster(yer, b)
+
+        self._onizleme = {"is": self.after(gecikme, goster), "ofset": self.ofset()}
+
+    def _onizlemeyi_kapat(self) -> None:
+        o = self._onizleme
+        if not o:
+            return
+        self._onizleme = None
+        if o.get("is"):
+            self.after_cancel(o["is"])
+        self.tuval.delete("onizleme")
+
+    def onizleme_hedefi(self, yer: dict, b: dict) -> tuple[int, float] | None:
+        """Baglantinin gittigi (sayfa, y); ic baglanti degilse None."""
+        sayfa, nokta = int(b.get("page", -1)), b.get("to")
+        if b.get("kind") == pymupdf.LINK_NAMED and sayfa < 0:
+            try:
+                h = self.belge.resolve_names().get(str(b.get("name") or b.get("nameddest") or ""))
+            except Exception:
+                h = None
+            if not h:
+                return None
+            sayfa, nokta = int(h.get("page", -1)), h.get("to")
+            nokta = pymupdf.Point(nokta) if nokta else None
+        if not 0 <= sayfa < self.belge.page_count:
+            return None
+        y = None
+        try:
+            if nokta is not None and (abs(float(nokta.x)) > 0.01 or abs(float(nokta.y)) > 0.01):
+                y = float(nokta.y)
+        except Exception:
+            y = None
+        if y is None:
+            capa = self.baglanti_capasi(sayfa, yer["no"],
+                                        pymupdf.Rect(b["from"]) if "from" in b else None)
+            y = capa.y0 if capa is not None else 0.0
+        return sayfa, y
+
+    def onizlemeyi_goster(self, yer: dict, b: dict) -> None:
+        hedef = self.onizleme_hedefi(yer, b)
+        if hedef is None or "from" not in b:
+            return
+        sayfa, y = hedef
+        gen, yuk = self.tuval.winfo_width(), self.tuval.winfo_height()
+        en = max(260, min(620, gen // 2))
+        r = self.belge[sayfa].rect
+        boy = min(r.height, r.width * 0.36)
+        ust = max(r.y0, min(y - boy * 0.12, r.y1 - boy))   # hedef satirin biraz ustunden
+        olcek = en / r.width
+        try:
+            resim = self._boyali_resim(sayfa, pymupdf.Matrix(olcek, olcek),
+                                       pymupdf.Rect(r.x0, ust, r.x1, ust + boy))
+        except Exception:
+            return
+        pay, kenar = 6, 8
+        yazitipi = (self.ayar["yazitipi"], max(8, int(self.ayar["yazitipi-boy"])))
+        satir = tkfont.Font(font=yazitipi).metrics("linespace")
+        tum_en, tum_boy = resim.width() + 2 * pay, resim.height() + 2 * pay + satir + pay
+        gx0, gy0 = self.tuval.canvasx(0), self.tuval.canvasy(0)
+        bx0, by0, _bx1, by1 = self.aygit_dikdortgeni(yer["no"], pymupdf.Rect(b["from"]), yer)
+
+        # Baglantinin altina; sigmazsa ustune. Yatayda ekranin icinde kalir.
+        x = max(gx0 + kenar, min(bx0, gx0 + gen - kenar - tum_en))
+        oy = by1 + kenar
+        if oy + tum_boy > gy0 + yuk and by0 - kenar - tum_boy >= gy0:
+            oy = by0 - kenar - tum_boy
+        self.tuval.create_rectangle(x, oy, x + tum_en, oy + tum_boy,
+                                    fill=self.ayar["palet-zemin"],
+                                    outline=self.ayar["palet-cerceve"], tags=("onizleme",))
+        self.tuval.create_text(x + pay, oy + pay, anchor="nw", font=yazitipi,
+                               text=self.m("baglanti_hedef_sayfa", n=sayfa + 1),
+                               fill=self.ayar["sonuk"], tags=("onizleme",))
+        self.tuval.create_image(x + pay, oy + pay * 2 + satir, image=resim, anchor="nw",
+                                tags=("onizleme",))
+        self._onizleme = {"resim": resim, "ofset": self.ofset()}
 
     def baglantiyi_ac(self, yer: dict, b: dict) -> None:
         tur = b.get("kind")
@@ -5643,6 +5863,7 @@ class Rubric(tk.Tk):
             self.paleti_kapat()
             return
         self.tuval.focus_set()
+        self._onizlemeyi_kapat()
         # Silme kipi: tik yalnizca siler - kaydirma / secim baslatmaz,
         # altindaki baglantiyi da acmaz.
         if self.silme_kipi:
@@ -5695,6 +5916,7 @@ class Rubric(tk.Tk):
         if self._imlecteki_baglanti is None:
             return
         self._imlecteki_baglanti = None
+        self._onizlemeyi_kapat()
         self.tuval.config(cursor="")
         if self.gecici_ileti and self.gecici_ileti == self._baglanti_iletisi:
             self._baglanti_iletisi = ""
@@ -5747,19 +5969,22 @@ class Rubric(tk.Tk):
             return False
         return True
 
-    def _yeni_dosya_adi(self, ek: str) -> str:
-        """`<ad>-<ek>.pdf`, belgenin yaninda; varsa -2, -3 ..."""
+    def _yeni_dosya_adi(self, ek: str, uzanti: str = ".pdf") -> str:
+        """`<ad>-<ek>.pdf` (ya da `uzanti`), belgenin yaninda; varsa -2, -3 ..."""
         kok, _ = os.path.splitext(self.pdf_yolu)
-        hedef, n = f"{kok}-{ek}.pdf", 2
+        hedef, n = f"{kok}-{ek}{uzanti}", 2
         while os.path.exists(hedef):
-            hedef, n = f"{kok}-{ek}-{n}.pdf", n + 1
+            hedef, n = f"{kok}-{ek}-{n}{uzanti}", n + 1
         return hedef
 
     def _taze_kopya(self) -> pymupdf.Document:
         """Belgenin diskteki hali. Bellekteki belgede vurgular highlight notu
         olarak islenmis durur; ondan yazsak birlestirilen, karartilan ya da
         temizlenen kopyaya vurgular da sessizce girerdi."""
-        return pymupdf.open(self.pdf_yolu)
+        kopya = pymupdf.open(self.pdf_yolu)
+        if kopya.needs_pass:                # acilirken girilen parola (bkz. _parola_coz)
+            kopya.authenticate(self._parolalar.get(os.path.normcase(self.pdf_yolu), ""))
+        return kopya
 
     def vurgulari_aktar(self) -> None:
         """Vurgular highlight, kenar notlari yapiskan not (Text annotation)
@@ -5794,6 +6019,74 @@ class Rubric(tk.Tk):
         not_.set_info(title="rubric", content=n["metin"])
         not_.update()
         return not_
+
+    # -- vurgulari Markdown'a ----------------------------------------------
+
+    def vurgulari_md(self) -> None:
+        """Vurgular ve kenar notlari sayfa sirasiyla `<ad>-notlar.md`ye:
+        Obsidian'a, ders ozetine yapistirmak icin. PDF sart degil (EPUB de olur)."""
+        if not self.belge or not self.pdf_yolu:
+            return
+        if not self.vurgular and not self.notlar:
+            self.bildir(self.m("aktarilacak_yok"), "uyari")
+            return
+        hedef = self._yeni_dosya_adi(self.m("md_ek"), ".md")
+        try:
+            with open(hedef, "w", encoding="utf-8", newline="\n") as f:
+                f.write(self.vurgu_markdown())
+        except OSError as e:
+            self.bildir(self.m("yazilamadi", e=e), "hata")
+            return
+        ne = [self.m(anahtar, n=len(liste)) for anahtar, liste in
+              (("vurgu_n", self.vurgular), ("not_n", self.notlar)) if liste]
+        self.bildir(self.m("aktarildi", vurgular=", ".join(ne),
+                           ad=os.path.basename(hedef)), "vurgu")
+
+    def _md_bolumleri(self) -> list[tuple[int, float, str]]:
+        """Icindekiler (sayfa, y, baslik) olarak, belge sirasinda."""
+        try:
+            icindekiler = self.belge.get_toc(simple=False)
+        except Exception:
+            return []
+        bolumler = []
+        for girdi in icindekiler:
+            sayfa = int(girdi[2]) - 1
+            if sayfa < 0:
+                continue
+            hedef = girdi[3] if len(girdi) > 3 and isinstance(girdi[3], dict) else {}
+            nokta = hedef.get("to")
+            bolumler.append((sayfa, float(nokta.y) if nokta is not None else 0.0,
+                             " ".join(str(girdi[1]).split())))
+        bolumler.sort(key=lambda b: (b[0], b[1]))
+        return bolumler
+
+    def vurgu_markdown(self) -> str:
+        """Icindekiler varsa her girdi bulundugu bolumun basligi altina duser."""
+        ogeler = [(int(v["sayfa"]), float(v["dikler"][0][1]), v, True)
+                  for v in self.vurgular if v.get("dikler")]
+        ogeler += [(int(n["sayfa"]), float(n["y"]), n, False) for n in self.notlar]
+        ogeler.sort(key=lambda o: (o[0], o[1]))
+        bolumler = self._md_bolumleri()
+
+        ad = os.path.basename(self.pdf_yolu)
+        baslik = " ".join(str((self.belge.metadata or {}).get("title") or "").split())
+        satirlar = [f"# {baslik}", "", f"`{ad}`", ""] if baslik \
+            else [f"# {os.path.splitext(ad)[0]}", ""]
+        simdiki, i = None, 0
+        for sayfa, y, oge, vurgu in ogeler:
+            while i < len(bolumler) and (bolumler[i][0], bolumler[i][1]) <= (sayfa, y + 1):
+                i += 1
+            bolum = bolumler[i - 1][2] if i else None
+            if bolum and bolum != simdiki:
+                satirlar += [f"## {bolum}", ""]
+                simdiki = bolum
+            yer = self.m("md_sayfa", n=sayfa + 1)
+            metin = " ".join(str(oge.get("metin", "")).split())
+            if vurgu:
+                satirlar += [f"> {metin} ({yer})", ""]
+            else:
+                satirlar += [f"- **{self.m('md_not')}, {yer}:** {metin}", ""]
+        return "\n".join(satirlar).rstrip() + "\n"
 
     # -- birlestir -----------------------------------------------------------
 
@@ -5837,6 +6130,112 @@ class Rubric(tk.Tk):
         self.bildir(self.m("birlestirildi", n=len(yollar) + 1,
                            sayfalar=self.m("sayfa_n", n=sayfalar),
                            ad=os.path.basename(hedef)), "vurgu")
+        return hedef
+
+    # -- sikistir -------------------------------------------------------------
+
+    def sikistir(self, arg: str = "") -> None:
+        """Gorseller `dpi`'ye (varsayilan 150) indirilir, yazi tipleri kullanilan
+        harflere kirpilir, akislar sikistirilir. Sonuc kucuk degilse dosya
+        birakilmaz: "kucuk" adli ayni boyda bir kopya yaniltir."""
+        if not self._pdf_hazir():
+            return
+        try:
+            dpi = int(arg) if arg.strip() else 150
+        except ValueError:
+            dpi = 0
+        if not 36 <= dpi <= 600:
+            self.bildir(self.m("sikistir_kullanim"), "hata")
+            return
+        hedef = self._yeni_dosya_adi(self.m("kucuk_ek"))
+        once = os.path.getsize(self.pdf_yolu)
+        try:
+            with self._taze_kopya() as kopya:
+                kopya.rewrite_images(dpi_threshold=int(dpi * 1.2), dpi_target=dpi, quality=75)
+                try:
+                    kopya.subset_fonts()
+                except Exception:
+                    pass                # kirpilamayan yazi tipi kalir, gerisi yine kuculur
+                kopya.save(hedef, garbage=4, deflate=True, deflate_images=True,
+                           deflate_fonts=True, clean=True, use_objstms=1)
+        except Exception as e:
+            if os.path.exists(hedef):
+                os.remove(hedef)
+            self.bildir(self.m("yazilamadi", e=e), "hata")
+            return
+        sonra = os.path.getsize(hedef)
+        if sonra >= once:
+            os.remove(hedef)
+            self.bildir(self.m("sikismadi", boyut=boyut_metni(once)), "uyari")
+            return
+        self.bildir(self.m("sikistirildi", once=boyut_metni(once), sonra=boyut_metni(sonra),
+                           yuzde=round(100 * (once - sonra) / once),
+                           ad=os.path.basename(hedef)), "vurgu")
+
+    # -- sifrele / sifre kaldir ---------------------------------------------
+
+    def parola_sor(self, ipucu: str, devam) -> None:
+        """Komut satirini parola icin acar: yazilan * gorunur, Enter
+        `devam(parola)`yi cagirir, Esc vazgecer."""
+        self.mod = "parola"
+        self._parola_devam = devam
+        self.komut_girdi.config(show="*")
+        self.komut_girdi.pack(side="bottom", fill="x", before=self.cubuk)
+        self.komut_girdi.delete(0, "end")
+        self.komut_girdi.focus_set()
+        self.bildir(ipucu, "uyari")
+
+    def sifrele(self) -> None:
+        """Parola iki kez sorulur (yazilan gorunmedigi icin), sonra AES-256."""
+        if not self._pdf_hazir():
+            return
+
+        def ilk(parola: str) -> None:
+            if not parola:
+                self.bildir(self.m("parola_bos"), "uyari")
+                return
+
+            def ikinci(tekrar: str) -> None:
+                if tekrar != parola:
+                    self.bildir(self.m("parola_uyusmadi"), "hata")
+                    return
+                self.sifreli_yaz(parola)
+
+            self.parola_sor(self.m("parola_tekrar"), ikinci)
+
+        self.parola_sor(self.m("parola_yeni"), ilk)
+
+    def sifreli_yaz(self, parola: str) -> str | None:
+        """Acma ve sahip parolasi ayni: kisitlama koymuyor, yalnizca kilitliyor."""
+        hedef = self._yeni_dosya_adi(self.m("sifreli_ek"))
+        try:
+            with self._taze_kopya() as kopya:
+                kopya.save(hedef, garbage=3, deflate=True,
+                           encryption=pymupdf.PDF_ENCRYPT_AES_256,
+                           owner_pw=parola, user_pw=parola)
+        except Exception as e:
+            self.bildir(self.m("yazilamadi", e=e), "hata")
+            return None
+        self.bildir(self.m("sifrelendi", ad=os.path.basename(hedef)), "vurgu")
+        return hedef
+
+    def sifre_kaldir(self) -> str | None:
+        """Parola ve izin kisitlamalari (yazdirma, kopyalama kilidi) olmayan bir
+        kopya. Parolali belgenin parolasi acilirken girildi (bkz. _parola_coz)."""
+        if not self._pdf_hazir():
+            return None
+        hedef = self._yeni_dosya_adi(self.m("sifresiz_ek"))
+        try:
+            with self._taze_kopya() as kopya:
+                if not (kopya.metadata or {}).get("encryption"):
+                    self.bildir(self.m("sifre_yok"), "uyari")
+                    return None
+                kopya.save(hedef, garbage=3, deflate=True,
+                           encryption=pymupdf.PDF_ENCRYPT_NONE)
+        except Exception as e:
+            self.bildir(self.m("yazilamadi", e=e), "hata")
+            return None
+        self.bildir(self.m("sifre_kaldirildi", ad=os.path.basename(hedef)), "vurgu")
         return hedef
 
     # -- ustveri temizle -----------------------------------------------------
@@ -7267,6 +7666,7 @@ class Rubric(tk.Tk):
     def komut_modu(self, onek: str = ":") -> None:
         self.mod = "komut" if onek == ":" else "arama"
         self.arama_yonu = -1 if onek == "?" else 1
+        self.komut_girdi.config(show="")
         self.komut_girdi.pack(side="bottom", fill="x", before=self.cubuk)
         self.komut_girdi.delete(0, "end")
         self.komut_girdi.insert(0, onek)
@@ -7277,6 +7677,7 @@ class Rubric(tk.Tk):
         """Komut satirini not yazmak icin acar. Onek yok: yazilan her sey
         notun kendisi, `:` ya da `/` ile baslayan bir not da yazilabilsin."""
         self.mod = "not"
+        self.komut_girdi.config(show="")
         self.komut_girdi.pack(side="bottom", fill="x", before=self.cubuk)
         self.komut_girdi.delete(0, "end")
         self.komut_girdi.insert(0, metin)
@@ -7285,6 +7686,11 @@ class Rubric(tk.Tk):
         self.durumu_tazele()
 
     def komut_iptal(self) -> None:
+        if self.mod == "parola":            # parola satirda kalmasin
+            self.komut_girdi.delete(0, "end")
+            self.komut_girdi.config(show="")
+            self._parola_devam = None
+            self.gecici_ileti = ""
         self.komut_girdi.pack_forget()
         self._duzenlenen_not = None     # Esc: yazilan not atilir
         self.mod = "normal"
@@ -7293,6 +7699,12 @@ class Rubric(tk.Tk):
 
     def komut_onayla(self, olay=None) -> str:
         ham = self.komut_girdi.get()
+        if self.mod == "parola":
+            devam = self._parola_devam
+            self.komut_iptal()
+            if devam:
+                devam(ham)
+            return "break"
         if self.mod == "not":
             n = self._duzenlenen_not          # komut_iptal bunu temizliyor
             self.komut_girdi.pack_forget()
@@ -7390,6 +7802,8 @@ class Rubric(tk.Tk):
                     self.yer_imi_sil(im)
         elif ad == "export":
             self.disa_aktar(arg)
+        elif komut_kimligi(ad) == "sikistir" and arg:
+            self.sikistir(arg)
         elif katla(ad) in ("redact", "karart", "schwarzen", "schwaerzen"):
             self.karart_ara(arg)
         elif ad == "tex" and arg:
@@ -7456,6 +7870,10 @@ class Rubric(tk.Tk):
             "karartma-kalemi": self.karartma_kalemi_degistir,
             "karartmayi-uygula": self.karartmayi_uygula,
             "ustveri-temizle": self.ustveri_temizle,
+            "vurgulari-md": self.vurgulari_md,
+            "sikistir":     self.sikistir,
+            "sifrele":      self.sifrele,
+            "sifre-kaldir": self.sifre_kaldir,
             "kopyala":      self.kopyala,
             "donustur":     self.donustur,
             "tex-modu":     self.tex_modu,

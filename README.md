@@ -58,6 +58,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `m<x>` `'<x>` | set / jump to mark |
 | `M` `b` | add bookmark, bookmarks panel |
 | `<C-l>` | show links on the page |
+| hover a link | peek at where an internal link (ref, cite, footnote) goes |
 | `<C-p>` `P` | print, print dialog |
 | `<A-Right>` `<A-Left>` | send doc to right / left pane |
 | `<A-w>` `<A-o>` | switch pane, back to one pane |
@@ -68,6 +69,9 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `<F11>` `<F5>` | fullscreen, presentation |
 | `<C-k>` | action palette |
 | `:` | command line |
+| `:highlights-md` | highlights + notes as Markdown, grouped by section |
+| `:compress [dpi]` | shrink images and fonts into a smaller copy |
+| `:encrypt` `:decrypt` | add / remove a password (AES-256); locked PDFs ask for it on open |
 
 Counts work everywhere (`5j`). `Ctrl`+wheel zooms around the cursor.
 
