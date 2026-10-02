@@ -72,6 +72,7 @@ a file directly: `uv run rubric.py "C:\path\to\book.pdf"`.
 | `:highlights-md` | highlights + notes as Markdown, grouped by section |
 | `:compress [dpi]` | shrink images and fonts into a smaller copy |
 | `:encrypt` `:decrypt` | add / remove a password (AES-256); locked PDFs ask for it on open |
+| `:ocr` | make scanned pages selectable + searchable with Windows' own OCR (`set ocr-dili tr`) |
 
 Counts work everywhere (`5j`). `Ctrl`+wheel zooms around the cursor.
 

@@ -417,6 +417,10 @@ VARSAYILAN_AYAR = {
     # Ic baglantinin (ref, cite, dipnot) ustunde bu kadar ms durunca hedefin
     # cevresi kucuk bir pencerede gorunur. 0 = hic gosterme.
     "baglanti-onizleme": 400,
+    # :ocr hangi dilde tanisin: Windows'un OCR dil etiketi (tr, en-US, de-DE ...).
+    # Bos: Windows'un bolge dili (tr-TR -> tr), kurulu degilse dil listesinin
+    # ilki. Kurulu OCR dilleri: Ayarlar > Saat ve dil > Dil.
+    "ocr-dili":       "",
     # Bolunmus gorunumde imlecin durdugu bolme etkin olur ("taban"): sag
     # belgenin uzerine gidip j'ye basan sagi kaydirir. false: bolme yalnizca
     # tikla ve <A-w> ile degisir.
@@ -637,6 +641,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "sikistir":       "compress: downsample images, subset fonts (<name>-small.pdf; :compress 100 sets the dpi)",
         "sifrele":        "encrypt with a password, AES-256 (<name>-encrypted.pdf)",
         "sifre-kaldir":   "remove the password / restrictions (<name>-decrypted.pdf)",
+        "ocr":            "OCR scanned pages with Windows' own OCR: invisible text, selectable + searchable (<name>-ocr.pdf)",
         "kopyala":        "copy the selected text (shift+drag) to the clipboard",
         "tex-modu":       "tex mode: .tex source beside its live PDF (again: focus the editor)",
         "tex-derle":      "save and compile the .tex now",
@@ -729,6 +734,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "sikistir":       "sıkıştır: görselleri küçült, yazı tiplerini kırp (<ad>-kucuk.pdf; :sıkıştır 100 dpi verir)",
         "sifrele":        "parolayla şifrele, AES-256 (<ad>-sifreli.pdf)",
         "sifre-kaldir":   "parolayı / kısıtlamaları kaldır (<ad>-sifresiz.pdf)",
+        "ocr":            "taranmış sayfaları Windows'un kendi OCR'ıyla tanı: görünmez metin, seçilir + aranır (<ad>-ocr.pdf)",
         "kopyala":        "seçili metni (shift+sürükle) panoya kopyala",
         "tex-modu":       "tex modu: .tex kaynağı yanında canlı PDF (yine basınca: editöre geç)",
         "tex-derle":      ".tex'i kaydet ve şimdi derle",
@@ -821,6 +827,7 @@ ACIKLAMALAR: dict[str, dict[str, str]] = {
         "sikistir":       "komprimieren: Bilder verkleinern, Schriften reduzieren (<Name>-klein.pdf; :komprimieren 100 setzt die dpi)",
         "sifrele":        "mit Passwort verschlüsseln, AES-256 (<Name>-verschluesselt.pdf)",
         "sifre-kaldir":   "Passwort / Einschränkungen entfernen (<Name>-entschluesselt.pdf)",
+        "ocr":            "gescannte Seiten mit der Windows-eigenen OCR erkennen: unsichtbarer Text, markier- und durchsuchbar (<Name>-ocr.pdf)",
         "kopyala":        "markierten Text (Shift+Ziehen) in die Zwischenablage kopieren",
         "tex-modu":       "TeX-Modus: .tex-Quelltext neben dem Live-PDF (nochmal: zum Editor)",
         "tex-derle":      ".tex speichern und jetzt kompilieren",
@@ -881,7 +888,7 @@ KOMUT_GRUPLARI = [
                "cik"]),
     ("pdf araclari", ["sayfa-duzeni", "birlestir", "karartma-kalemi",
                       "karartmayi-uygula", "ustveri-temizle", "sikistir",
-                      "sifrele", "sifre-kaldir"]),
+                      "sifrele", "sifre-kaldir", "ocr"]),
     ("tex", ["tex-modu", "tex-derle", "tex-sync", "tex-pdf-kaydet", "tex-kapat"]),
     ("bolmeler", ["bolme-saga", "bolme-sola", "bolme-gec", "bolme-tek"]),
     ("ayarlar", ["belge-siniri", "geri-acma-siniri", "yazici", "tepsi"]),
@@ -1137,6 +1144,18 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "sifrelendi":       "encrypted (AES-256) -> {ad}",
         "sifre_yok":        "this PDF has no password or restrictions - nothing written",
         "sifre_kaldirildi": "password removed -> {ad}",
+        "yuzde":            "{n}%",
+        "ocr_ek":           "ocr",
+        "ocr_hazirlaniyor": "OCR: preparing pages {n}/{toplam}",
+        "ocr_taniyor":      "OCR: {n}/{toplam} pages read",
+        "ocr_yaziliyor":    "OCR: writing the text layer {n}/{toplam}",
+        "ocr_gerek_yok":    "every page already has text - nothing to recognize",
+        "ocr_suruyor":      "OCR is already running",
+        "ocr_dil_yok":      "Windows OCR has no language '{dil}' - add it under Settings > Time & language > Language",
+        "ocr_hata":         "OCR failed: {e}",
+        "ocr_bos":          "OCR found no text on {sayfalar} - nothing written",
+        "ocr_bitti":        "OCR: {sayfalar}, {kelimeler} -> {ad}",
+        "kelime_n":         ("{n} word", "{n} words"),
         "alan_title":       "title",
         "alan_author":      "author",
         "alan_subject":     "subject",
@@ -1441,6 +1460,18 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "sifrelendi":       "şifrelendi (AES-256) -> {ad}",
         "sifre_yok":        "bu PDF'te parola ya da kısıtlama yok - bir şey yazılmadı",
         "sifre_kaldirildi": "parola kaldırıldı -> {ad}",
+        "yuzde":            "%{n}",
+        "ocr_ek":           "ocr",
+        "ocr_hazirlaniyor": "OCR: sayfalar hazırlanıyor {n}/{toplam}",
+        "ocr_taniyor":      "OCR: {n}/{toplam} sayfa okundu",
+        "ocr_yaziliyor":    "OCR: metin katmanı yazılıyor {n}/{toplam}",
+        "ocr_gerek_yok":    "her sayfada zaten metin var - tanınacak bir şey yok",
+        "ocr_suruyor":      "OCR zaten sürüyor",
+        "ocr_dil_yok":      "Windows OCR'da '{dil}' dili yok - Ayarlar > Saat ve dil > Dil'den ekle",
+        "ocr_hata":         "OCR başarısız: {e}",
+        "ocr_bos":          "OCR {sayfalar} içinde metin bulamadı - bir şey yazılmadı",
+        "ocr_bitti":        "OCR: {sayfalar}, {kelimeler} -> {ad}",
+        "kelime_n":         ("{n} kelime", "{n} kelime"),
         "alan_title":       "başlık",
         "alan_author":      "yazar",
         "alan_subject":     "konu",
@@ -1744,6 +1775,18 @@ METINLER: dict[str, dict[str, str | tuple[str, str]]] = {
         "sifrelendi":       "verschlüsselt (AES-256) -> {ad}",
         "sifre_yok":        "dieses PDF hat kein Passwort und keine Einschränkungen - nichts geschrieben",
         "sifre_kaldirildi": "Passwort entfernt -> {ad}",
+        "yuzde":            "{n} %",
+        "ocr_ek":           "ocr",
+        "ocr_hazirlaniyor": "OCR: Seiten vorbereiten {n}/{toplam}",
+        "ocr_taniyor":      "OCR: {n}/{toplam} Seiten gelesen",
+        "ocr_yaziliyor":    "OCR: Textebene schreiben {n}/{toplam}",
+        "ocr_gerek_yok":    "jede Seite hat schon Text - nichts zu erkennen",
+        "ocr_suruyor":      "OCR läuft bereits",
+        "ocr_dil_yok":      "Windows-OCR hat keine Sprache '{dil}' - unter Einstellungen > Zeit und Sprache > Sprache hinzufügen",
+        "ocr_hata":         "OCR fehlgeschlagen: {e}",
+        "ocr_bos":          "OCR hat auf {sayfalar} keinen Text gefunden - nichts geschrieben",
+        "ocr_bitti":        "OCR: {sayfalar}, {kelimeler} -> {ad}",
+        "kelime_n":         ("{n} Wort", "{n} Wörter"),
         "alan_title":       "Titel",
         "alan_author":      "Autor",
         "alan_subject":     "Thema",
@@ -1907,7 +1950,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "karartma-kalemi": "redact-pen", "karartmayi-uygula": "apply-redaction",
         "ustveri-temizle": "strip-metadata",
         "vurgulari-md": "highlights-md", "sikistir": "compress",
-        "sifrele": "encrypt", "sifre-kaldir": "decrypt",
+        "sifrele": "encrypt", "sifre-kaldir": "decrypt", "ocr": "ocr",
         "kopyala": "copy", "tex-modu": "tex", "tex-derle": "tex-compile",
         "tex-kapat": "tex-close", "tex-pdf-kaydet": "tex-save-pdf",
         "tex-sync": "tex-sync",
@@ -1952,7 +1995,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "karartma-kalemi": "karartma-kalemi", "karartmayi-uygula": "karartmayı-uygula",
         "ustveri-temizle": "üstveri-temizle",
         "vurgulari-md": "vurguları-md", "sikistir": "sıkıştır",
-        "sifrele": "şifrele", "sifre-kaldir": "şifre-kaldır",
+        "sifrele": "şifrele", "sifre-kaldir": "şifre-kaldır", "ocr": "ocr",
         "kopyala": "kopyala", "tex-modu": "tex-modu", "tex-derle": "tex-derle",
         "tex-kapat": "tex-kapat", "tex-pdf-kaydet": "tex-pdf-kaydet",
         "tex-sync": "tex-eşle",
@@ -1999,7 +2042,7 @@ KOMUT_ADLARI: dict[str, dict[str, str]] = {
         "karartma-kalemi": "schwärzstift", "karartmayi-uygula": "schwärzung-anwenden",
         "ustveri-temizle": "metadaten-entfernen",
         "vurgulari-md": "markierungen-md", "sikistir": "komprimieren",
-        "sifrele": "verschlüsseln", "sifre-kaldir": "entschlüsseln",
+        "sifrele": "verschlüsseln", "sifre-kaldir": "entschlüsseln", "ocr": "ocr",
         "kopyala": "kopieren", "tex-modu": "tex-modus", "tex-derle": "tex-kompilieren",
         "tex-kapat": "tex-schließen", "tex-pdf-kaydet": "tex-pdf-speichern",
         "tex-sync": "tex-sync",
@@ -2448,6 +2491,65 @@ def _yorumsuz(deger: str) -> str:
     return deger
 
 
+# :ocr'un PowerShell betigi. Windows'un kendi OCR'i (Windows.Media.Ocr): ek
+# paket yok. Dizindeki <no>.png'leri sirayla tanir, her biri icin <no>.json
+# yazar (kelime, kutu piksel olarak, satir no). Saf ASCII: PowerShell 5.1
+# BOM'suz dosyada ASCII disi harfi bozuyor.
+OCR_BETIGI = r'''param([string]$Dizin, [string]$Dil)
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
+$null = [Windows.Storage.Streams.IRandomAccessStream, Windows.Storage.Streams, ContentType = WindowsRuntime]
+$null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+$null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime]
+$null = [Windows.Globalization.Language, Windows.Globalization, ContentType = WindowsRuntime]
+$asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+    $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
+function Bekle($is, [type]$tur) {
+    $t = $asTask.MakeGenericMethod($tur).Invoke($null, @($is))
+    $null = $t.Wait(-1)
+    $t.Result
+}
+if ($Dil) {
+    $motor = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new($Dil))
+} else {
+    # Once bolge dili (tr-TR, sonra tr): dil listesinin basinda cogu kez
+    # en-US durur ve Turkce metni Ingilizce tanir ("Yalniz" -> "Yalruz").
+    $motor = $null
+    $kultur = Get-Culture
+    foreach ($etiket in @($kultur.Name, $kultur.TwoLetterISOLanguageName)) {
+        $aday = [Windows.Globalization.Language]::new($etiket)   # $dil olmaz: $Dil'le ayni ad
+        if ($null -eq $motor -and [Windows.Media.Ocr.OcrEngine]::IsLanguageSupported($aday)) {
+            $motor = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($aday)
+        }
+    }
+    if ($null -eq $motor) { $motor = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages() }
+}
+if ($null -eq $motor) { [Console]::Error.WriteLine("ocr-dil-yok"); exit 3 }
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+foreach ($png in (Get-ChildItem -LiteralPath $Dizin -Filter *.png | Sort-Object { [int]$_.BaseName })) {
+    $dosya = Bekle ([Windows.Storage.StorageFile]::GetFileFromPathAsync($png.FullName)) ([Windows.Storage.StorageFile])
+    $akis = Bekle ($dosya.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+    $coz = Bekle ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($akis)) ([Windows.Graphics.Imaging.BitmapDecoder])
+    $bmp = Bekle ($coz.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+    $sonuc = Bekle ($motor.RecognizeAsync($bmp)) ([Windows.Media.Ocr.OcrResult])
+    $kelimeler = New-Object System.Collections.ArrayList
+    $no = 0
+    foreach ($satir in $sonuc.Lines) {
+        foreach ($k in $satir.Words) {
+            $r = $k.BoundingRect
+            $null = $kelimeler.Add(@{ s = $no; m = $k.Text; x = $r.X; y = $r.Y; w = $r.Width; h = $r.Height })
+        }
+        $no++
+    }
+    $json = ConvertTo-Json -InputObject @($kelimeler) -Compress
+    [System.IO.File]::WriteAllText((Join-Path $Dizin ($png.BaseName + '.json')), $json, $utf8)
+    $bmp.Dispose(); $akis.Dispose()
+}
+'''
+
+
 class Durum:
     def __init__(self):
         self.yol = os.path.join(veri_dizini(), "durum.json")
@@ -2570,6 +2672,7 @@ class Rubric(tk.Tk):
         # parolali belgeler: yol -> bu oturumda girilen parola. Diske yazilmaz.
         self._parolalar: dict[str, str] = {}
         self._parola_devam = None          # parola satiri onaylaninca cagrilir
+        self._ocr: dict | None = None      # suren :ocr isi (bkz. ocr)
         # dosya bulucu (o)
         self.bulucu: tk.Frame | None = None
         self.belge_karti: tk.Frame | None = None   # B'nin ortadaki karti
@@ -3193,6 +3296,7 @@ class Rubric(tk.Tk):
         self.ciz()
 
         kayit["goruldu"] = time.time()          # listeden dusecek belge buna gore secilir
+        kayit["toplam"] = self.belge.page_count
         self._izlenen[os.path.normcase(yol)] = self._dosya_imzasi(yol)
         self._listeye_ekle(yol)
         dusen = self._listeyi_kirp()
@@ -4060,8 +4164,15 @@ class Rubric(tk.Tk):
             for y in gorunen:
                 no = b.belgeler.index(y) + 1
                 isaret = ">" if b.pdf_yolu and self._ayni_yol(y, b.pdf_yolu) else " "
-                sayfa = self.m("satir_sayfa", s=int(self.kalici.dosya(y).get("sayfa", 0)) + 1)
-                satir = f" {isaret} {no:>2}  {os.path.basename(y):<{sutun_en}}  {sayfa:>6}"
+                ilerleme = self.ilerleme(y, b)
+                if ilerleme:
+                    sayfa = f"{self.m('satir_sayfa', s=ilerleme[0])}/{ilerleme[1]}"
+                    yuzde = self.ilerleme_metni(ilerleme, cubuk=not bolundu)
+                else:
+                    sayfa = self.m("satir_sayfa", s=int(self.kalici.dosya(y).get("sayfa", 0)) + 1)
+                    yuzde = ""
+                satir = f" {isaret} {no:>2}  {os.path.basename(y):<{sutun_en}}  {sayfa:>10}  " \
+                        f"{yuzde:>{5 if bolundu else 18}}"
                 if not bolundu:                  # tek sutunda klasoru de yazacak yer var
                     dizin = os.path.dirname(y)
                     if os.path.normcase(dizin).startswith(os.path.normcase(ev)):
@@ -4097,6 +4208,30 @@ class Rubric(tk.Tk):
         for c, (_, liste) in enumerate(self._bk_sutunlar):
             liste.selection_clear(0, "end")
         self._bk_sec(secim)
+
+    def ilerleme(self, yol: str, bolme: Bolme | None = None) -> tuple[int, int] | None:
+        """(kaldigi sayfa, toplam), 1'den. Bolmede acik belgede canli deger;
+        yoksa durum.json'dan - kayit olusturmadan: bulucu yuzlerce yola bakiyor,
+        durum.json her bakilan dosya icin sismesin. Toplam bilinmiyorsa None."""
+        if bolme is not None and bolme.belge is not None and self._ayni_yol(yol, bolme.pdf_yolu):
+            return bolme.aktif_sayfa + 1, bolme.belge.page_count
+        kayit = self.kalici.veri.get(os.path.abspath(yol)) or {}
+        try:
+            toplam = int(kayit.get("toplam") or 0)
+            sayfa = int(kayit.get("sayfa", 0)) + 1
+        except (TypeError, ValueError):
+            return None
+        return (min(sayfa, toplam), toplam) if toplam > 0 else None
+
+    def ilerleme_metni(self, ilerleme: tuple[int, int], cubuk: bool = True) -> str:
+        """`[###-------] %30`; durum cubugunun yuzdesiyle ayni hesap."""
+        sayfa, toplam = ilerleme
+        yuzde = int(100 * sayfa / toplam)
+        metin = self.m("yuzde", n=yuzde)
+        if not cubuk:
+            return metin
+        dolu = yuzde // 10
+        return f"[{'#' * dolu}{'-' * (10 - dolu)}] {metin:>4}"
 
     def _bk_liste(self, c: int | None = None) -> tk.Listbox:
         return self._bk_sutunlar[self._bk_sutun if c is None else c][1]
@@ -4368,6 +4503,7 @@ class Rubric(tk.Tk):
         kayit = self.kalici.dosya(self.pdf_yolu)
         kayit["konum"] = list(self.konum_imi())
         kayit["sayfa"] = self.aktif_sayfa
+        kayit["toplam"] = self.belge.page_count     # okuma ilerlemesi icin
         kayit["donme"] = self.donme
         kayit["isaretler"] = {k: list(v) for k, v in self.isaretler.items()}
         if diske:
@@ -6238,6 +6374,196 @@ class Rubric(tk.Tk):
         self.bildir(self.m("sifre_kaldirildi", ad=os.path.basename(hedef)), "vurgu")
         return hedef
 
+    # -- OCR (taranmis sayfaya metin katmani) ---------------------------------
+    #
+    # Windows'un kendi OCR'i PowerShell'den cagrilir (OCR_BETIGI): ek paket
+    # yok, exe ayni kalir. Metni olmayan sayfalar ~300 dpi gri PNG'ye cizilir,
+    # tek bir PowerShell sureci hepsini tanir ve sayfa basina JSON yazar;
+    # kelimeler gorunmez yazi olarak taranmis kelimenin tam ustune konur.
+    # Sonuc `<ad>-ocr.pdf` acilir: secilir, aranir, kopyalanir. Uc asama da
+    # arayuzu dondurmaz: cizim ve yazma parca parca, tanima ayri surecte.
+    # Metni olan sayfaya dokunulmaz.
+
+    OCR_DPI = 300
+
+    def ocr(self) -> None:
+        if not self._pdf_hazir():
+            return
+        if self._ocr is not None:
+            self.bildir(self.m("ocr_suruyor"), "uyari")
+            return
+        try:
+            kopya = self._taze_kopya()
+        except Exception as e:
+            self.bildir(self.m("acilamadi", e=e), "hata")
+            return
+        dizin = os.path.join(veri_dizini(), "ocr", f"{time.time_ns():x}")
+        os.makedirs(dizin, exist_ok=True)
+        self._ocr = {"kopya": kopya, "dizin": dizin, "asama": "ciz", "no": 0,
+                     "sayfalar": {}, "surec": None, "kelime": 0,
+                     "hedef": self._yeni_dosya_adi(self.m("ocr_ek")),
+                     "parola": self._parolalar.get(os.path.normcase(self.pdf_yolu))}
+        self._ocr_adimi(self._ocr)
+
+    def _ocr_adimi(self, isi: dict) -> None:
+        """Asamalar (ciz -> tani -> yaz) bir sonraki adima kadar kac ms
+        beklenecegini dondurur; None: is bitti."""
+        if isi is not self._ocr:
+            return
+        try:
+            bekle = getattr(self, f"_ocr_{isi['asama']}")(isi)
+        except Exception as e:
+            self._ocr_birak()
+            self.bildir(self.m("ocr_hata", e=e), "hata")
+            return
+        if bekle is not None and isi is self._ocr:
+            self.after(bekle, self._ocr_adimi, isi)
+
+    def _ocr_ciz(self, isi: dict) -> int | None:
+        kopya = isi["kopya"]
+        bitis = time.perf_counter() + 0.05
+        while isi["no"] < kopya.page_count and time.perf_counter() < bitis:
+            no = isi["no"]
+            isi["no"] += 1
+            sayfa = kopya[no]
+            if sayfa.get_text("text").strip():
+                continue
+            r = sayfa.rect                      # Windows OCR en cok 10000 px kabul ediyor
+            olcek = min(self.OCR_DPI / 72, 9000 / max(r.width, r.height, 1))
+            sayfa.get_pixmap(matrix=pymupdf.Matrix(olcek, olcek), colorspace=pymupdf.csGRAY,
+                             alpha=False).save(os.path.join(isi["dizin"], f"{no}.png"))
+            isi["sayfalar"][no] = olcek
+        if isi["no"] < kopya.page_count:
+            self.bildir(self.m("ocr_hazirlaniyor", n=isi["no"], toplam=kopya.page_count), "uyari")
+            return 1
+        if not isi["sayfalar"]:
+            self._ocr_birak()
+            self.bildir(self.m("ocr_gerek_yok"), "uyari")
+            return None
+        betik = os.path.join(isi["dizin"], "ocr.ps1")
+        with open(betik, "w", encoding="ascii") as f:
+            f.write(OCR_BETIGI)
+        isi["hata"] = os.path.join(isi["dizin"], "hata.txt")
+        with open(isi["hata"], "wb") as hata:
+            isi["surec"] = subprocess.Popen(
+                ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                 "-File", betik, isi["dizin"], str(self.ayar["ocr-dili"] or "")],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=hata,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        isi["asama"] = "tani"
+        self.bildir(self.m("ocr_taniyor", n=0, toplam=len(isi["sayfalar"])), "uyari")
+        return 250
+
+    def _ocr_tani(self, isi: dict) -> int | None:
+        surec = isi["surec"]
+        if surec.poll() is None:
+            n = sum(os.path.exists(os.path.join(isi["dizin"], f"{no}.json"))
+                    for no in isi["sayfalar"])
+            self.bildir(self.m("ocr_taniyor", n=n, toplam=len(isi["sayfalar"])), "uyari")
+            return 250
+        if surec.returncode != 0:
+            with open(isi["hata"], "rb") as f:
+                hata = f.read().decode("oem", "replace")
+            self._ocr_birak()
+            if "ocr-dil-yok" in hata:
+                self.bildir(self.m("ocr_dil_yok", dil=self.ayar["ocr-dili"] or "?"), "hata")
+            else:
+                satirlar = [s.strip() for s in hata.splitlines() if s.strip()]
+                self.bildir(self.m("ocr_hata", e=satirlar[0] if satirlar else surec.returncode),
+                            "hata")
+            return None
+        isi["asama"], isi["sira"] = "yaz", sorted(isi["sayfalar"])
+        yol = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "arial.ttf")
+        # Gorunmez yazinin yalnizca harf genislikleri onemli; ama Turkce harf
+        # icin Unicode bir yazi tipi sart, Helvetica'da ş ğ ı yok.
+        isi["yazitipi"] = (pymupdf.Font(fontfile=yol), yol) if os.path.exists(yol) \
+            else (pymupdf.Font("helv"), None)
+        return 1
+
+    def _ocr_yaz(self, isi: dict) -> int | None:
+        kopya = isi["kopya"]
+        bitis = time.perf_counter() + 0.05
+        while isi["sira"] and time.perf_counter() < bitis:
+            no = isi["sira"].pop(0)
+            try:
+                with open(os.path.join(isi["dizin"], f"{no}.json"), encoding="utf-8-sig") as f:
+                    kelimeler = json.load(f)
+            except (OSError, ValueError):
+                continue                        # tanima bu sayfaya bir sey yazamadi
+            isi["kelime"] += self.ocr_katmani(kopya[no], kelimeler, isi["sayfalar"][no],
+                                              *isi["yazitipi"])
+        if isi["sira"]:
+            self.bildir(self.m("ocr_yaziliyor", n=len(isi["sayfalar"]) - len(isi["sira"]),
+                               toplam=len(isi["sayfalar"])), "uyari")
+            return 1
+        sayfalar = self.m("sayfa_n", n=len(isi["sayfalar"]))
+        if not isi["kelime"]:
+            self._ocr_birak()
+            self.bildir(self.m("ocr_bos", sayfalar=sayfalar), "uyari")
+            return None
+        try:
+            kopya.subset_fonts()                # Arial'in tamami her belgeye gomulmesin
+        except Exception:
+            pass
+        kopya.save(isi["hedef"], garbage=3, deflate=True)
+        hedef, kelime = isi["hedef"], isi["kelime"]
+        if isi["parola"]:                       # sifreli kopya: parolasi ayni
+            self._parolalar[os.path.normcase(hedef)] = isi["parola"]
+        self._ocr_birak()
+        self.belgeyi_ac(hedef)
+        self.bildir(self.m("ocr_bitti", sayfalar=sayfalar, kelimeler=self.m("kelime_n", n=kelime),
+                           ad=os.path.basename(hedef)), "vurgu")
+        return None
+
+    def ocr_katmani(self, sayfa: pymupdf.Page, kelimeler, olcek: float,
+                    yazitipi: pymupdf.Font, dosya: str | None) -> int:
+        """Kelimeler gorunmez yazi (render_mode=3): boyu kutunun yuksekligine,
+        eni yatay olcekle kutunun enine oturur; secim ve arama kutusu taranmis
+        kelimenin tam ustune duser. Kutular ekranda gorunen (donmus) sayfada:
+        nokta derotation_matrix ile sayfanin uzayina, yazinin yonu
+        rotation_matrix ile cevrilir (derotation 90 / 270'te ters akiyordu -
+        dort aci da denendi)."""
+        if isinstance(kelimeler, dict):         # PowerShell tek elemanli diziyi acabilir
+            kelimeler = [kelimeler]
+        ters = sayfa.derotation_matrix
+        d = sayfa.rotation_matrix
+        yon = pymupdf.Matrix(d.a, d.b, d.c, d.d, 0, 0)
+        ust, alt = yazitipi.ascender, yazitipi.descender
+        n = 0
+        for k in kelimeler:
+            metin = " ".join(str(k.get("m") or "").split())
+            try:
+                x, y, en, boy = (float(k[a]) / olcek for a in "xywh")
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not metin or en <= 0 or boy <= 0:
+                continue
+            punto = boy / (ust - alt)
+            uzunluk = yazitipi.text_length(metin, fontsize=punto)
+            if uzunluk <= 0:
+                continue
+            nokta = pymupdf.Point(x, y + ust * punto) * ters
+            sayfa.insert_text(nokta, metin, fontsize=punto,
+                              fontname="rubric-ocr" if dosya else "helv", fontfile=dosya,
+                              render_mode=3,
+                              morph=(nokta, pymupdf.Matrix(en / uzunluk, 0, 0, 1, 0, 0) * yon))
+            n += 1
+        return n
+
+    def _ocr_birak(self) -> None:
+        isi, self._ocr = self._ocr, None
+        if not isi:
+            return
+        surec = isi.get("surec")
+        if surec is not None and surec.poll() is None:
+            surec.kill()
+            surec.wait(timeout=5)
+        try:
+            isi["kopya"].close()
+        except Exception:
+            pass
+        shutil.rmtree(isi["dizin"], ignore_errors=True)
+
     # -- ustveri temizle -----------------------------------------------------
 
     USTVERI_ALANLARI = ("title", "author", "subject", "keywords", "creator",
@@ -7874,6 +8200,7 @@ class Rubric(tk.Tk):
             "sikistir":     self.sikistir,
             "sifrele":      self.sifrele,
             "sifre-kaldir": self.sifre_kaldir,
+            "ocr":          self.ocr,
             "kopyala":      self.kopyala,
             "donustur":     self.donustur,
             "tex-modu":     self.tex_modu,
@@ -8834,7 +9161,9 @@ class Rubric(tk.Tk):
         kutu = ""                                 # [x] kolonu yalnizca bir sey secilince
         if self._bulucu_secilenler:
             kutu = "[x]" if os.path.normcase(y) in self._bulucu_secilenler else "[ ]"
-        return f" {kutu}{isaret} {os.path.basename(y):<42}  {dizin}"
+        ilerleme = self.ilerleme(y)
+        yuzde = self.ilerleme_metni(ilerleme, cubuk=False) if ilerleme else ""
+        return f" {kutu}{isaret} {os.path.basename(y):<42}  {yuzde:>4}  {dizin}"
 
     def _bulucu_listeyi_ciz(self) -> None:
         liste = self.bulucu_liste
@@ -10170,6 +10499,8 @@ class Rubric(tk.Tk):
         if self._izle_isi is not None:          # otomatik yenileme dursun
             self.after_cancel(self._izle_isi)
             self._izle_isi = None
+        if self._ocr is not None:               # OCR: PowerShell sureci dursun
+            self._ocr_birak()
         if self.tex:                            # tex: yazilan kaydedilsin, latex dursun
             self._tex_durdur()
         # tex onizlemeleri gecici: sorulmadan kalanlar da (Esc, cokme) birikmesin

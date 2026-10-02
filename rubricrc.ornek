@@ -83,6 +83,9 @@ set capa-suresi          1400
 # Ic baglantinin (ref, cite, dipnot) ustunde bu kadar ms durunca hedefin
 # cevresi kucuk bir pencerede gorunur. 0 yazarsan hic gosterilmez.
 set baglanti-onizleme    400
+# :ocr'un dili (Windows OCR dil etiketi: tr, en-US, de-DE ...). Bos birakirsan
+# Windows'un bolge dili; kurulu diller Ayarlar > Saat ve dil > Dil'de.
+# set ocr-dili            tr
 # Bolunmus gorunumde (Alt+Right / Alt+Left) imlecin uzerinde durdugu bolme
 # etkin olur: sag belgenin tablosuna gidip j'ye basan sagi kaydirir.
 # false yaparsan bolme yalnizca tikla ve Alt+w ile degisir - tekerlek yine
